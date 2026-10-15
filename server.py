@@ -1,3 +1,103 @@
+import asyncio
+import os
+import json
+import random
+from aiohttp import web
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+
+TOKEN = os.getenv("BOT_TOKEN")
+WEBAPP_URL = os.getenv("WEBAPP_URL")
+PORT = int(os.getenv("PORT", 3000))
+DATA_DIR = os.getenv("DATA_DIR", "./data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DB_FILE = os.path.join(DATA_DIR, "balances.json")
+
+# ---------- БАЗА ----------
+def load_db():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_db(db):
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False)
+
+def migrate_db():
+    db = load_db()
+    changed = False
+    for uid, val in list(db.items()):
+        if not isinstance(val, dict):
+            try:
+                old = int(val)
+            except Exception:
+                old = 10000
+            db[uid] = {"balance": old, "inventory": []}
+            changed = True
+        else:
+            if "balance" not in val:
+                val["balance"] = 10000
+                changed = True
+            if "inventory" not in val:
+                val["inventory"] = []
+                changed = True
+    if changed:
+        save_db(db)
+
+def get_user(user_id):
+    db = load_db()
+    uid = str(user_id)
+    if uid not in db:
+        db[uid] = {"balance": 10000, "inventory": []}
+        save_db(db)
+    else:
+        val = db[uid]
+        if not isinstance(val, dict):
+            try:
+                old = int(val)
+            except Exception:
+                old = 10000
+            db[uid] = {"balance": old, "inventory": []}
+            save_db(db)
+        else:
+            if "balance" not in val:
+                val["balance"] = 10000
+                save_db(db)
+            if "inventory" not in val:
+                val["inventory"] = []
+                save_db(db)
+    return db[uid]
+
+def save_user(user_id, data):
+    db = load_db()
+    db[str(user_id)] = data
+    save_db(db)
+
+def get_balance(user_id):
+    return get_user(user_id)["balance"]
+
+def update_balance(user_id, delta):
+    u = get_user(user_id)
+    u["balance"] = max(0, u["balance"] + delta)
+    save_user(user_id, u)
+    return u["balance"]
+
+GIFTS = {
+    "1": {"name": "АЛМАЗ", "price": 5000, "color": "#88eeff", "shape": "diamond"},
+    "2": {"name": "КОРОНА", "price": 15000, "color": "#ffdd44", "shape": "crown"},
+    "3": {"name": "ЧЕРЕП", "price": 3000, "color": "#ff3a5a", "shape": "skull"},
+    "4": {"name": "ЗВЕЗДА", "price": 25000, "color": "#ffaa00", "shape": "star"},
+    "5": {"name": "РАКЕТА", "price": 50000, "color": "#4a3aff", "shape": "rocket"},
+    "6": {"name": "ПЛАНЕТА", "price": 100000, "color": "#4aff8a", "shape": "planet"},
+}
+
+HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -27,9 +127,8 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 .bet-btn:active { background:#2a2a4a; }
 .big-btn { background:linear-gradient(135deg,#4a3aff,#6a4aff); border:none; color:#fff; padding:14px; border-radius:12px; font-size:14px; font-weight:800; width:100%; margin-top:12px; cursor:pointer; letter-spacing:1px; text-transform:uppercase; }
 
-/* ==== РАКЕТА ==== */
 .rocket-stage { position:relative; height:420px; background:linear-gradient(180deg,#000005 0%,#05051a 40%,#0a0a25 100%); border-radius:14px; overflow:hidden; border:1px solid #1e1e3a; margin-top:10px; }
-.star { position:absolute; background:#fff; border-radius:50%; opacity:.7; }
+.star { position:absolute; background:#fff; border-radius:50%; }
 .rocket-svg { position:absolute; left:50%; transform:translateX(-50%); width:36px; height:60px; transition:bottom .12s linear; z-index:5; filter:drop-shadow(0 0 12px #4a3aff); }
 .flame { position:absolute; left:50%; transform:translateX(-50%); width:14px; height:30px; background:radial-gradient(ellipse at top,#ffaa00,#ff4400,transparent); border-radius:50%; opacity:.9; animation:flame .1s infinite alternate; }
 @keyframes flame { from{height:20px;opacity:.7} to{height:34px;opacity:1} }
@@ -43,7 +142,6 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 .bet-row .amount { color:#4aff8a; font-weight:700; }
 .station-svg { position:absolute; top:14px; left:50%; transform:translateX(-50%); width:60px; height:40px; opacity:.6; }
 
-/* ==== САМОЛЁТ ==== */
 .plane-stage { position:relative; height:420px; background:linear-gradient(180deg,#001a2a 0%,#003355 60%,#005588 100%); border-radius:14px; overflow:hidden; border:1px solid #1e3a5a; margin-top:10px; }
 .cloud { position:absolute; background:rgba(255,255,255,.1); border-radius:50%; filter:blur(20px); }
 .plane-svg { position:absolute; left:50%; transform:translateX(-50%); width:50px; height:30px; transition:bottom .15s linear; z-index:5; filter:drop-shadow(0 0 10px #ffaa00); }
@@ -55,27 +153,22 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 .fuel-text { position:absolute; top:12px; right:14px; font-size:10px; font-weight:700; z-index:11; color:#fff; }
 .plane-alt { position:absolute; top:40px; right:14px; font-size:12px; color:#4aff8a; font-weight:700; z-index:10; }
 
-/* ==== РУЛЕТКА ==== */
 .wheel-wrap { position:relative; width:300px; height:300px; margin:20px auto; }
 .wheel { width:100%; height:100%; border-radius:50%; border:10px solid #2a2a4a; position:relative; transition:transform 5s cubic-bezier(.15,.85,.25,1); overflow:hidden; box-shadow:0 0 50px rgba(74,58,255,.4),inset 0 0 30px rgba(0,0,0,.8); }
 .wheel-num { position:absolute; font-size:14px; font-weight:900; color:#fff; text-shadow:0 0 6px #000,0 0 10px #000; }
 .pointer { position:absolute; top:-16px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent; border-top:24px solid #ff3a5a; z-index:10; filter:drop-shadow(0 0 8px #ff3a5a); }
 .wheel-center { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:50px; height:50px; background:radial-gradient(circle,#4a3aff,#2a1a8a); border-radius:50%; border:3px solid #6a4aff; z-index:5; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:900; }
 
-/* ==== NFT ==== */
 .nft-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
 .nft-card { background:linear-gradient(160deg,#12122a,#0a0a1a); border:1px solid #2a2a4a; border-radius:14px; padding:14px; text-align:center; position:relative; overflow:hidden; }
-.nft-card::before { content:''; position:absolute; top:-50%; left:-50%; width:200%; height:200%; background:conic-gradient(from 0deg,transparent,#4a3aff,transparent,#ff3a5a,transparent); animation:rotate 4s linear infinite; opacity:.15; }
-@keyframes rotate { to{transform:rotate(360deg)} }
-.nft-img { width:80px; height:80px; margin:0 auto 8px; position:relative; z-index:2; }
-.nft-name { font-size:11px; font-weight:700; position:relative; z-index:2; }
-.nft-price { font-size:10px; color:#4aff8a; margin:4px 0; position:relative; z-index:2; }
-.nft-btn { background:linear-gradient(135deg,#4a3aff,#6a4aff); border:none; color:#fff; padding:8px 16px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; position:relative; z-index:2; margin-top:4px; }
+.nft-img { width:80px; height:80px; margin:0 auto 8px; }
+.nft-name { font-size:11px; font-weight:700; }
+.nft-price { font-size:10px; color:#4aff8a; margin:4px 0; }
+.nft-btn { background:linear-gradient(135deg,#4a3aff,#6a4aff); border:none; color:#fff; padding:8px 16px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; margin-top:4px; }
 </style>
 </head>
 <body>
 
-<!-- МЕНЮ -->
 <div id="menu" class="screen active">
   <div class="balance">
     <h1>БАЛАНС</h1>
@@ -92,12 +185,10 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
   </div>
 </div>
 
-<!-- РАКЕТА -->
 <div id="rocket" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>РАКЕТА</h2>
   <div class="rocket-stage" id="rocket-stage">
-    <div class="station-svg" id="station-svg"></div>
     <div class="countdown hidden" id="countdown">10</div>
     <div class="mult-display" id="rocket-mult">x1.00</div>
     <div class="rocket-svg" id="rocket-svg">
@@ -121,7 +212,6 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
   <button id="rocket-cashout" class="big-btn" style="display:none;background:linear-gradient(135deg,#4aff8a,#2acc6a);color:#000;" onclick="cashoutRocket()">ЗАБРАТЬ</button>
 </div>
 
-<!-- САМОЛЁТ -->
 <div id="plane" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>САМОЛЁТ</h2>
@@ -142,7 +232,6 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
   <button id="plane-cashout" class="big-btn" style="display:none;background:linear-gradient(135deg,#4aff8a,#2acc6a);color:#000;" onclick="cashoutPlane()">ЗАБРАТЬ</button>
 </div>
 
-<!-- РУЛЕТКА -->
 <div id="wheel" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>РУЛЕТКА</h2>
@@ -155,21 +244,18 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
   <div id="wheel-buttons" class="bet-buttons"></div>
 </div>
 
-<!-- NFT -->
 <div id="nft" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>NFT КОЛЛЕКЦИЯ</h2>
   <div class="nft-grid" id="nft-list"></div>
 </div>
 
-<!-- ИНВЕНТАРЬ -->
 <div id="inventory" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>ИНВЕНТАРЬ</h2>
   <div class="nft-grid" id="inv-list"></div>
 </div>
 
-<!-- МАГАЗИН -->
 <div id="shop" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>МАГАЗИН NFT</h2>
@@ -185,16 +271,6 @@ let balance = 10000, inventory = [];
 let rocketBet = 0, rocketInterval = null, rocketMult = 1.0, rocketBottom = 20;
 let planeBet = 0, planeInterval = null, planeMult = 1.0, planeBottom = 40, planeFuel = 100;
 let selectedBet = 0;
-
-// NFT SVG-картинки
-const NFT_DATA = {
-  "1": { name:"АЛМАЗ", price:5000, color:"#88eeff", shape:"diamond" },
-  "2": { name:"КОРОНА", price:15000, color:"#ffdd44", shape:"crown" },
-  "3": { name:"ЧЕРЕП", price:3000, color:"#ff3a5a", shape:"skull" },
-  "4": { name:"ЗВЕЗДА", price:25000, color:"#ffaa00", shape:"star" },
-  "5": { name:"РАКЕТА", price:50000, color:"#4a3aff", shape:"rocket" },
-  "6": { name:"ПЛАНЕТА", price:100000, color:"#4aff8a", shape:"planet" },
-};
 
 function svgIcon(shape, color) {
   const c = color;
@@ -248,8 +324,15 @@ function openGame(n) {
   if(n==='inventory') renderInv();
   if(n==='shop') renderShop();
 }
+function makeBetButtons(id, cb) {
+  const c=document.getElementById(id); c.innerHTML='';
+  BETS.forEach(b=>{
+    const btn=document.createElement('button');
+    btn.className='bet-btn'; btn.textContent=fmt(b)+' ₽';
+    btn.onclick=()=>cb(b); c.appendChild(btn);
+  });
+}
 
-// ============ РАКЕТА ============
 function initRocket() {
   if(rocketInterval){clearInterval(rocketInterval);rocketInterval=null;}
   rocketBet=0; rocketMult=1.0; rocketBottom=20; selectedBet=0;
@@ -274,14 +357,6 @@ function initRocket() {
   document.getElementById('bets-list').innerHTML='';
   makeBetButtons('rocket-buttons', selectRocketBet);
 }
-function makeBetButtons(id, cb) {
-  const c=document.getElementById(id); c.innerHTML='';
-  BETS.forEach(b=>{
-    const btn=document.createElement('button');
-    btn.className='bet-btn'; btn.textContent=fmt(b)+' ₽';
-    btn.onclick=()=>cb(b); c.appendChild(btn);
-  });
-}
 function selectRocketBet(b) {
   if(b>balance){tg.showAlert('Недостаточно средств');return;}
   selectedBet=b;
@@ -295,10 +370,8 @@ async function confirmRocketBet() {
   document.getElementById('rocket-buttons').innerHTML='';
   document.getElementById('rocket-confirm').style.display='none';
   document.getElementById('rocket-status').textContent='РАКЕТА СТАРТУЕТ...';
-  // показываем ставку игрока в списке
   document.getElementById('bets-list').innerHTML =
     `<div class="bet-row"><span class="name">${user?.first_name||'Вы'}</span><span class="amount">${fmt(rocketBet)} ₽</span></div>`;
-  // отсчёт
   const cd = document.getElementById('countdown');
   cd.classList.remove('hidden');
   for(let i=10;i>=1;i--){
@@ -306,7 +379,6 @@ async function confirmRocketBet() {
     await new Promise(r=>setTimeout(r,700));
   }
   cd.classList.add('hidden');
-  // старт
   document.getElementById('flame').style.display='block';
   document.getElementById('rocket-cashout').style.display='block';
   rocketInterval=setInterval(()=>{
@@ -314,14 +386,12 @@ async function confirmRocketBet() {
     rocketBottom=Math.min(370, rocketBottom+2.2);
     document.getElementById('rocket-svg').style.bottom=rocketBottom+'px';
     document.getElementById('rocket-mult').textContent='x'+rocketMult.toFixed(2);
-    // след
     const stage=document.getElementById('rocket-stage');
     const trail=document.createElement('div');
     trail.className='trail';
     trail.style.cssText=`position:absolute;left:calc(50% - 3px);bottom:${rocketBottom-15}px;width:6px;height:6px;background:#ffaa00;border-radius:50%;opacity:.6;`;
     stage.appendChild(trail);
     setTimeout(()=>trail.remove(),600);
-    // крах
     if(Math.random()<0.012){
       clearInterval(rocketInterval);rocketInterval=null;
       document.getElementById('rocket-mult').textContent='x'+rocketMult.toFixed(2);
@@ -346,13 +416,11 @@ async function cashoutRocket() {
   setTimeout(initRocket,3000);
 }
 
-// ============ САМОЛЁТ ============
 function initPlane() {
   if(planeInterval){clearInterval(planeInterval);planeInterval=null;}
   planeBet=0; planeMult=1.0; planeBottom=40; planeFuel=100;
   const stage=document.getElementById('plane-stage');
   stage.querySelectorAll('.balloon,.cloud').forEach(e=>e.remove());
-  // облака
   for(let i=0;i<8;i++){
     const cl=document.createElement('div'); cl.className='cloud';
     const sz=Math.random()*120+60;
@@ -374,7 +442,6 @@ async function startPlane(bet) {
   await changeBalance(-bet);
   document.getElementById('plane-buttons').innerHTML='';
   document.getElementById('plane-cashout').style.display='block';
-  // шарики на пути
   const stage=document.getElementById('plane-stage');
   const balloons=[];
   for(let i=0;i<12;i++){
@@ -391,11 +458,9 @@ async function startPlane(bet) {
     planeFuel=Math.max(0, planeFuel-1.5);
     document.getElementById('fuel-fill').style.width=planeFuel+'%';
     document.getElementById('fuel-text').textContent=Math.floor(planeFuel)+'%';
-    // самолёт
     if(planeFuel>0) planeBottom+=1.5;
     document.getElementById('plane-svg').style.bottom=planeBottom+'px';
     document.getElementById('plane-alt').textContent=Math.floor(planeBottom-40)+' м';
-    // шарики
     balloons.forEach(b=>{
       if(!b.used && Math.abs(planeBottom-b.y)<25){
         b.used=true;
@@ -407,12 +472,11 @@ async function startPlane(bet) {
         else { planeMult+=0.2; planeFuel=Math.min(100,planeFuel+8); }
       }
     });
-    // конец
     if(planeFuel<=0){
       clearInterval(planeInterval);planeInterval=null;
       document.getElementById('plane-cashout').style.display='none';
       if(planeBottom<340){
-        document.getElementById('plane-status').textContent='ТОПЛИВО КОНЧИЛОСЬ! ПАДЕНИЕ. ПОТЕРЯНО: '+fmt(planeBet)+' ₽';
+        document.getElementById('plane-status').textContent='ТОПЛИВО КОНЧИЛОСЬ! ПОТЕРЯНО: '+fmt(planeBet)+' ₽';
       } else {
         const win=Math.floor(planeBet*planeMult*2);
         changeBalance(win);
@@ -421,7 +485,7 @@ async function startPlane(bet) {
       setTimeout(initPlane,3000);
       return;
     }
-    document.getElementById('plane-status').textContent='ШАРИКОВ СОБРАНО x'+planeMult.toFixed(1)+' | ТОПЛИВО '+Math.floor(planeFuel)+'%';
+    document.getElementById('plane-status').textContent='ШАРИКОВ x'+planeMult.toFixed(1)+' | ТОПЛИВО '+Math.floor(planeFuel)+'%';
   },120);
 }
 async function cashoutPlane() {
@@ -434,7 +498,6 @@ async function cashoutPlane() {
   setTimeout(initPlane,3000);
 }
 
-// ============ РУЛЕТКА ============
 function initWheel() {
   const wheel=document.getElementById('wheel-el');
   wheel.style.transition='none';
@@ -476,11 +539,10 @@ async function playWheel(bet) {
   setTimeout(initWheel,3000);
 }
 
-// ============ NFT ============
 function renderNFT() {
   const c=document.getElementById('nft-list'); c.innerHTML='';
-  Object.keys(NFT_DATA).forEach(id=>{
-    const n=NFT_DATA[id];
+  Object.keys(GIFTS).forEach(id=>{
+    const n=GIFTS[id];
     const d=document.createElement('div'); d.className='nft-card';
     d.innerHTML = svgIcon(n.shape, n.color) +
       `<div class="nft-name">${n.name}</div>
@@ -506,7 +568,7 @@ function renderInv() {
     return;
   }
   inventory.forEach((gid,i)=>{
-    const n=NFT_DATA[gid]; if(!n) return;
+    const n=GIFTS[gid]; if(!n) return;
     const d=document.createElement('div'); d.className='nft-card';
     d.innerHTML = svgIcon(n.shape,n.color) +
       `<div class="nft-name">${n.name}</div>
@@ -527,8 +589,8 @@ async function sellNFT(index) {
 }
 function renderShop() {
   const c=document.getElementById('shop-list'); c.innerHTML='';
-  Object.keys(NFT_DATA).forEach(id=>{
-    const n=NFT_DATA[id];
+  Object.keys(GIFTS).forEach(id=>{
+    const n=GIFTS[id];
     const d=document.createElement('div'); d.className='nft-card'; d.style.marginBottom='10px';
     d.innerHTML = svgIcon(n.shape,n.color) +
       `<div class="nft-name">${n.name}</div>
@@ -542,3 +604,84 @@ loadBalance();
 </script>
 </body>
 </html>
+"""
+
+async def handle_index(request):
+    return web.Response(text=HTML_PAGE, content_type="text/html")
+
+async def handle_get_balance(request):
+    user_id = request.query.get("user_id")
+    if not user_id:
+        return web.json_response({"error":"no user_id"}, status=400)
+    u = get_user(int(user_id))
+    return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+
+async def handle_post_balance(request):
+    data = await request.json()
+    user_id = int(data["user_id"])
+    delta = int(data["delta"])
+    new = update_balance(user_id, delta)
+    u = get_user(user_id)
+    return web.json_response({"balance": new, "inventory": u["inventory"]})
+
+async def handle_buy(request):
+    data = await request.json()
+    user_id = int(data["user_id"])
+    gift_id = str(data["gift_id"])
+    u = get_user(user_id)
+    if gift_id not in GIFTS:
+        return web.json_response({"error":"Нет такого подарка"}, status=400)
+    price = GIFTS[gift_id]["price"]
+    if u["balance"] < price:
+        return web.json_response({"error":"Недостаточно средств"})
+    u["balance"] -= price
+    u["inventory"].append(gift_id)
+    save_user(user_id, u)
+    return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+
+async def handle_sell(request):
+    data = await request.json()
+    user_id = int(data["user_id"])
+    index = int(data["index"])
+    u = get_user(user_id)
+    if index < 0 or index >= len(u["inventory"]):
+        return web.json_response({"error":"Нет такого предмета"}, status=400)
+    gift_id = u["inventory"].pop(index)
+    price = GIFTS[gift_id]["price"]
+    u["balance"] += price
+    save_user(user_id, u)
+    return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+
+app = web.Application()
+app.router.add_get("/", handle_index)
+app.router.add_get("/api/balance", handle_get_balance)
+app.router.add_post("/api/balance", handle_post_balance)
+app.router.add_post("/api/buy", handle_buy)
+app.router.add_post("/api/sell", handle_sell)
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    get_user(message.from_user.id)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎰 Открыть Казино", web_app=WebAppInfo(url=WEBAPP_URL))]
+    ])
+    await message.answer("🎰 <b>Добро пожаловать в Казино!</b>\n\nНажми кнопку ниже:", reply_markup=kb, parse_mode="HTML")
+
+async def start_web():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"✅ Web server on port {PORT}")
+
+async def main():
+    migrate_db()
+    await start_web()
+    print("🤖 Bot started")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
