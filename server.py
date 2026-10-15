@@ -18,8 +18,11 @@ DB_FILE = os.path.join(DATA_DIR, "balances.json")
 # ---------- БАЗА ----------
 def load_db():
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
     return {}
 
 def save_db(db):
@@ -30,8 +33,23 @@ def get_user(user_id):
     db = load_db()
     uid = str(user_id)
     if uid not in db:
-        db[uid] = {"balance": 10000, "inventory": []}  # 100 руб = 10000 копеек
+        db[uid] = {"balance": 10000, "inventory": []}
         save_db(db)
+    else:
+        # Миграция старого формата (число) в новый (словарь)
+        if not isinstance(db[uid], dict):
+            try:
+                old_balance = int(db[uid])
+            except Exception:
+                old_balance = 10000
+            db[uid] = {"balance": old_balance, "inventory": []}
+            save_db(db)
+        elif "inventory" not in db[uid]:
+            db[uid]["inventory"] = []
+            save_db(db)
+        elif "balance" not in db[uid]:
+            db[uid]["balance"] = 10000
+            save_db(db)
     return db[uid]
 
 def save_user(user_id, data):
@@ -48,7 +66,6 @@ def update_balance(user_id, delta):
     save_user(user_id, u)
     return u["balance"]
 
-# Список подарков для инвентаря
 GIFTS = {
     "1": {"name": "🐻 Мишка", "price": 5000, "emoji": "🐻"},
     "2": {"name": "💎 Алмаз", "price": 15000, "emoji": "💎"},
@@ -90,7 +107,6 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
 .big-btn { background:linear-gradient(135deg,#e94560,#c62a47); border:none; color:#fff; padding:16px; border-radius:14px; font-size:18px; font-weight:800; width:100%; margin-top:16px; cursor:pointer; box-shadow:0 4px 20px rgba(233,69,96,.4); }
 .big-btn:active { transform:scale(.97); }
 
-/* РАКЕТА-СТАНЦИЯ */
 .rocket-area { position:relative; height:400px; background:linear-gradient(180deg,#000010 0%,#0a0a2a 50%,#1a1a3e 100%); border-radius:16px; overflow:hidden; margin-top:12px; border:1px solid #2a2a4a; }
 .star { position:absolute; background:#fff; border-radius:50%; opacity:.6; animation:twinkle 2s infinite; }
 @keyframes twinkle { 0%,100%{opacity:.2} 50%{opacity:.9} }
@@ -107,26 +123,22 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
 .timer { position:absolute; top:10px; right:14px; font-size:14px; color:#fbbf24; font-weight:800; z-index:6; background:rgba(0,0,0,.5); padding:4px 10px; border-radius:8px; }
 .trail { position:absolute; width:5px; height:5px; background:#fbbf24; border-radius:50%; opacity:.6; pointer-events:none; }
 
-/* СЛОТЫ */
 .slots { display:flex; justify-content:center; gap:8px; margin:20px 0; }
 .slot { width:80px; height:110px; background:linear-gradient(180deg,#1a1a2e,#0f0f1e); border:2px solid #667eea; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:52px; box-shadow:inset 0 0 20px rgba(102,126,234,.3); }
 .slot.spinning { animation:spin .1s infinite; }
 @keyframes spin { 0%{transform:translateY(-6px)} 50%{transform:translateY(6px)} 100%{transform:translateY(-6px)} }
 
-/* ПЛИНКО */
 .plinko-area { position:relative; height:340px; background:#0a0a1e; border-radius:16px; overflow:hidden; margin-top:12px; border:1px solid #2a2a4a; }
 .peg { position:absolute; width:9px; height:9px; background:#667eea; border-radius:50%; box-shadow:0 0 10px #667eea; }
 .ball { position:absolute; width:16px; height:16px; background:#fbbf24; border-radius:50%; box-shadow:0 0 15px #fbbf24; transition:all .08s linear; z-index:5; }
 .slots-bottom { position:absolute; bottom:0; width:100%; display:flex; }
 
-/* РУЛЕТКА */
 .wheel-wrap { position:relative; width:280px; height:280px; margin:20px auto; }
 .wheel { width:100%; height:100%; border-radius:50%; border:8px solid #667eea; position:relative; transition:transform 4s cubic-bezier(.17,.67,.3,1); box-shadow:0 0 40px rgba(102,126,234,.5); overflow:hidden; }
 .wheel-seg { position:absolute; width:50%; height:50%; top:0; left:50%; transform-origin:0% 100%; border-left:1px solid rgba(255,255,255,.15); }
 .wheel-num { position:absolute; font-size:13px; font-weight:900; color:#fff; text-shadow:0 0 4px #000; }
 .pointer { position:absolute; top:-14px; left:50%; transform:translateX(-50%); font-size:30px; color:#e94560; z-index:10; filter:drop-shadow(0 0 8px #e94560); }
 
-/* ИНВЕНТАРЬ */
 .inv-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
 .inv-item { background:linear-gradient(135deg,#1a1a2e,#252547); border-radius:14px; padding:16px; text-align:center; border:1px solid #2a2a4a; }
 .inv-item .emoji { font-size:40px; }
@@ -138,7 +150,6 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
 </head>
 <body>
 
-<!-- МЕНЮ -->
 <div id="menu" class="screen active">
   <div class="balance">
     <h1>💰 БАЛАНС</h1>
@@ -155,7 +166,6 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
   </div>
 </div>
 
-<!-- РАКЕТА -->
 <div id="rocket" class="screen">
   <button class="back" onclick="goMenu()">← Назад</button>
   <h2>🚀 Ракета до станции</h2>
@@ -170,7 +180,6 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
   <button id="rocket-cashout" class="big-btn" style="display:none" onclick="cashoutRocket()">💸 Забрать</button>
 </div>
 
-<!-- СЛОТЫ -->
 <div id="slots" class="screen">
   <button class="back" onclick="goMenu()">← Назад</button>
   <h2>🎰 Слоты</h2>
@@ -183,7 +192,6 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
   <div id="slots-buttons" class="bet-buttons"></div>
 </div>
 
-<!-- ПЛИНКО -->
 <div id="plinko" class="screen">
   <button class="back" onclick="goMenu()">← Назад</button>
   <h2>🎲 Плинко</h2>
@@ -194,7 +202,6 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
   <div id="plinko-buttons" class="bet-buttons"></div>
 </div>
 
-<!-- РУЛЕТКА -->
 <div id="wheel" class="screen">
   <button class="back" onclick="goMenu()">← Назад</button>
   <h2>🎡 Рулетка</h2>
@@ -206,14 +213,12 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
   <div id="wheel-buttons" class="bet-buttons"></div>
 </div>
 
-<!-- ИНВЕНТАРЬ -->
 <div id="inventory" class="screen">
   <button class="back" onclick="goMenu()">← Назад</button>
   <h2>🎒 Инвентарь</h2>
   <div id="inv-list" class="inv-grid"></div>
 </div>
 
-<!-- МАГАЗИН -->
 <div id="shop" class="screen">
   <button class="back" onclick="goMenu()">← Назад</button>
   <h2>🛒 Магазин подарков</h2>
@@ -224,7 +229,7 @@ h2 { font-size:20px; margin-bottom:16px; text-align:center; font-weight:800; }
 const tg = window.Telegram.WebApp;
 tg.ready(); tg.expand();
 const user = tg.initDataUnsafe?.user;
-const BETS = [100, 500, 1000, 5000]; // в копейках: 1₽, 5₽, 10₽, 50₽
+const BETS = [100, 500, 1000, 5000];
 let balance = 10000;
 let inventory = [];
 let rocketInterval = null, rocketMult = 1.0, rocketBet = 0, rocketTimer = 0, rocketSprings = 0;
@@ -238,29 +243,31 @@ const GIFTS = {
   "6": {name:"🚀 Ракета-NFT", price:100000, emoji:"🚀"},
 };
 
-function fmt(kop) {
-  return (kop / 100).toFixed(2);
-}
+function fmt(kop) { return (kop / 100).toFixed(2); }
 
 async function loadBalance() {
   if (!user) return;
-  const r = await fetch(`/api/balance?user_id=${user.id}`);
-  const d = await r.json();
-  balance = d.balance;
-  inventory = d.inventory || [];
-  updateUI();
+  try {
+    const r = await fetch(`/api/balance?user_id=${user.id}`);
+    const d = await r.json();
+    balance = d.balance;
+    inventory = d.inventory || [];
+    updateUI();
+  } catch(e) { console.error(e); }
 }
 async function changeBalance(delta) {
   if (!user) return;
-  const r = await fetch('/api/balance', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({user_id:user.id, delta})
-  });
-  const d = await r.json();
-  balance = d.balance;
-  inventory = d.inventory || [];
-  updateUI();
+  try {
+    const r = await fetch('/api/balance', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({user_id:user.id, delta})
+    });
+    const d = await r.json();
+    balance = d.balance;
+    inventory = d.inventory || [];
+    updateUI();
+  } catch(e) { console.error(e); }
 }
 function updateUI() {
   document.getElementById('balance').textContent = fmt(balance);
@@ -294,13 +301,11 @@ function makeBetButtons(id, cb) {
   });
 }
 
-// ===== РАКЕТА ДО СТАНЦИИ =====
 function initRocket() {
   if (rocketInterval) { clearInterval(rocketInterval); rocketInterval = null; }
   rocketBet = 0; rocketMult = 1.0; rocketTimer = 10; rocketSprings = 0;
   const area = document.getElementById('rocket-area');
   area.querySelectorAll('.spring, .trail, .star').forEach(e => e.remove());
-  // звёзды
   for (let i = 0; i < 30; i++) {
     const s = document.createElement('div');
     s.className = 'star';
@@ -329,7 +334,6 @@ async function startRocket(bet) {
   document.getElementById('rocket-cashout').style.display = 'block';
   document.getElementById('rocket-ship').classList.add('flying');
   document.getElementById('rocket-status').textContent = `Ставка: ${fmt(bet)} ₽`;
-  // Пружины в воздухе
   const area = document.getElementById('rocket-area');
   const springs = [];
   for (let i = 0; i < 5; i++) {
@@ -344,18 +348,15 @@ async function startRocket(bet) {
   rocketInterval = setInterval(() => {
     rocketTimer -= 0.15;
     document.getElementById('rocket-timer').textContent = '⏱ ' + Math.max(0, rocketTimer).toFixed(1) + 's';
-    // ракета летит
     const progress = (10 - rocketTimer) / 10;
     const bottom = 20 + progress * 300;
     document.getElementById('rocket-ship').style.bottom = bottom + 'px';
-    // след
     const trail = document.createElement('div');
     trail.className = 'trail';
     trail.style.left = 'calc(50% - 2px)';
     trail.style.bottom = (bottom - 10) + 'px';
     area.appendChild(trail);
     setTimeout(() => trail.remove(), 800);
-    // пружины: если ракета рядом с пружиной — бустер
     springs.forEach((sp, i) => {
       const spTop = 80 + i*60;
       if (!sp.dataset.used && Math.abs(bottom - spTop) < 30) {
@@ -367,7 +368,6 @@ async function startRocket(bet) {
     });
     rocketMult = +(rocketMult + 0.05 + rocketSprings * 0.1).toFixed(2);
     document.getElementById('rocket-mult').textContent = 'x' + rocketMult.toFixed(2);
-    // крах
     if (Math.random() < 0.015 * (1 + rocketSprings * 0.3)) {
       clearInterval(rocketInterval); rocketInterval = null;
       document.getElementById('rocket-mult').textContent = '💥 x' + rocketMult.toFixed(2);
@@ -379,10 +379,9 @@ async function startRocket(bet) {
       setTimeout(() => { document.getElementById('rocket-ship').textContent = '🚀'; initRocket(); }, 2500);
       return;
     }
-    // долетел до станции
     if (rocketTimer <= 0 || bottom >= 310) {
       clearInterval(rocketInterval); rocketInterval = null;
-      const win = Math.floor(rocketBet * rocketMult * 2); // бонус за долёт
+      const win = Math.floor(rocketBet * rocketMult * 2);
       changeBalance(win);
       document.getElementById('rocket-mult').textContent = '🛸 x' + rocketMult.toFixed(2);
       document.getElementById('rocket-status').textContent = `✅ Долетел до станции! +${fmt(win)} ₽`;
@@ -404,7 +403,6 @@ async function cashoutRocket() {
   setTimeout(initRocket, 2500);
 }
 
-// ===== СЛОТЫ =====
 function initSlots() {
   document.getElementById('slots-status').textContent = 'Выбери ставку';
   makeBetButtons('slots-buttons', playSlots);
@@ -433,7 +431,6 @@ async function playSlots(bet) {
   setTimeout(initSlots, 2500);
 }
 
-// ===== ПЛИНКО =====
 function initPlinko() {
   const area = document.getElementById('plinko-area');
   area.querySelectorAll('.peg, .ball').forEach(e => e.remove());
@@ -494,14 +491,12 @@ async function playPlinko(bet) {
   setTimeout(initPlinko, 3000);
 }
 
-// ===== РУЛЕТКА =====
 function initWheel() {
   const wheel = document.getElementById('wheel-el');
   wheel.style.transition = 'none';
   wheel.style.transform = 'rotate(0deg)';
   setTimeout(() => wheel.style.transition = 'transform 4s cubic-bezier(.17,.67,.3,1)', 50);
   wheel.innerHTML = '';
-  const segs = 12;
   const colors = ['#e94560','#1a1a2e','#f59e0b','#1a1a2e','#4ade80','#1a1a2e','#667eea','#1a1a2e','#e94560','#1a1a2e','#f59e0b','#1a1a2e'];
   const mults = [2,0,5,0,3,0,10,0,2,0,5,0];
   mults.forEach((m,i) => {
@@ -541,7 +536,6 @@ async function playWheel(bet) {
   setTimeout(initWheel, 3000);
 }
 
-// ===== ИНВЕНТАРЬ =====
 function renderInventory() {
   const c = document.getElementById('inv-list');
   c.innerHTML = '';
@@ -561,20 +555,22 @@ function renderInventory() {
   });
 }
 async function sellGift(index) {
-  const r = await fetch('/api/sell', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({user_id:user.id, index})
-  });
-  const d = await r.json();
-  balance = d.balance;
-  inventory = d.inventory;
-  updateUI();
-  renderInventory();
-  tg.showAlert('Подарок продан!');
+  try {
+    const r = await fetch('/api/sell', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({user_id:user.id, index})
+    });
+    const d = await r.json();
+    if (d.error) { tg.showAlert(d.error); return; }
+    balance = d.balance;
+    inventory = d.inventory;
+    updateUI();
+    renderInventory();
+    tg.showAlert('Подарок продан!');
+  } catch(e) { console.error(e); }
 }
 
-// ===== МАГАЗИН =====
 function renderShop() {
   const c = document.getElementById('shop-list');
   c.innerHTML = '';
@@ -590,17 +586,19 @@ function renderShop() {
   });
 }
 async function buyGift(id) {
-  const r = await fetch('/api/buy', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({user_id:user.id, gift_id:id})
-  });
-  const d = await r.json();
-  if (d.error) { tg.showAlert(d.error); return; }
-  balance = d.balance;
-  inventory = d.inventory;
-  updateUI();
-  tg.showAlert('Куплено!');
+  try {
+    const r = await fetch('/api/buy', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({user_id:user.id, gift_id:id})
+    });
+    const d = await r.json();
+    if (d.error) { tg.showAlert(d.error); return; }
+    balance = d.balance;
+    inventory = d.inventory;
+    updateUI();
+    tg.showAlert('Куплено!');
+  } catch(e) { console.error(e); }
 }
 
 loadBalance();
