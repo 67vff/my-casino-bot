@@ -15,7 +15,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 DB_FILE = os.path.join(DATA_DIR, "balances.json")
 
-# ---------- БАЗА ----------
 def load_db():
     if os.path.exists(DB_FILE):
         try:
@@ -140,7 +139,6 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 .bet-row { display:flex; justify-content:space-between; padding:6px 10px; background:rgba(20,20,40,.8); border-radius:8px; margin-bottom:4px; font-size:11px; border:1px solid #1e1e3a; }
 .bet-row .name { color:#8a8aff; font-weight:700; }
 .bet-row .amount { color:#4aff8a; font-weight:700; }
-.station-svg { position:absolute; top:14px; left:50%; transform:translateX(-50%); width:60px; height:40px; opacity:.6; }
 
 .plane-stage { position:relative; height:420px; background:linear-gradient(180deg,#001a2a 0%,#003355 60%,#005588 100%); border-radius:14px; overflow:hidden; border:1px solid #1e3a5a; margin-top:10px; }
 .cloud { position:absolute; background:rgba(255,255,255,.1); border-radius:50%; filter:blur(20px); }
@@ -160,7 +158,7 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 .wheel-center { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:50px; height:50px; background:radial-gradient(circle,#4a3aff,#2a1a8a); border-radius:50%; border:3px solid #6a4aff; z-index:5; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:900; }
 
 .nft-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
-.nft-card { background:linear-gradient(160deg,#12122a,#0a0a1a); border:1px solid #2a2a4a; border-radius:14px; padding:14px; text-align:center; position:relative; overflow:hidden; }
+.nft-card { background:linear-gradient(160deg,#12122a,#0a0a1a); border:1px solid #2a2a4a; border-radius:14px; padding:14px; text-align:center; }
 .nft-img { width:80px; height:80px; margin:0 auto 8px; }
 .nft-name { font-size:11px; font-weight:700; }
 .nft-price { font-size:10px; color:#4aff8a; margin:4px 0; }
@@ -274,12 +272,12 @@ let selectedBet = 0;
 
 function svgIcon(shape, color) {
   const c = color;
-  if (shape==="diamond") return `<svg viewBox="0 0 80 80" class="nft-img"><polygon points="40,5 70,30 40,75 10,30" fill="${c}" stroke="#fff" stroke-width="2"/><polygon points="40,5 55,30 40,40 25,30" fill="#fff" opacity=".3"/></svg>`;
-  if (shape==="crown") return `<svg viewBox="0 0 80 80" class="nft-img"><path d="M10,60 L10,30 L25,45 L40,15 L55,45 L70,30 L70,60 Z" fill="${c}" stroke="#fff" stroke-width="2"/><circle cx="40" cy="55" r="4" fill="#fff"/></svg>`;
-  if (shape==="skull") return `<svg viewBox="0 0 80 80" class="nft-img"><ellipse cx="40" cy="40" rx="25" ry="28" fill="${c}"/><circle cx="30" cy="38" r="6" fill="#000"/><circle cx="50" cy="38" r="6" fill="#000"/><rect x="32" y="55" width="16" height="12" fill="#000"/></svg>`;
-  if (shape==="star") return `<svg viewBox="0 0 80 80" class="nft-img"><polygon points="40,5 50,32 78,32 55,50 63,78 40,60 17,78 25,50 2,32 30,32" fill="${c}" stroke="#fff" stroke-width="1"/></svg>`;
-  if (shape==="rocket") return `<svg viewBox="0 0 80 80" class="nft-img"><polygon points="40,5 52,30 52,60 28,60 28,30" fill="${c}" stroke="#fff" stroke-width="2"/><polygon points="40,5 52,30 28,30" fill="#fff" opacity=".3"/><polygon points="28,60 20,72 28,72" fill="#ff3a5a"/><polygon points="52,60 60,72 52,72" fill="#ff3a5a"/></svg>`;
-  if (shape==="planet") return `<svg viewBox="0 0 80 80" class="nft-img"><circle cx="40" cy="40" r="25" fill="${c}"/><ellipse cx="40" cy="40" rx="38" ry="8" fill="none" stroke="#fff" stroke-width="2" transform="rotate(-20 40 40)"/></svg>`;
+  if (shape==="diamond") return '<svg viewBox="0 0 80 80" class="nft-img"><polygon points="40,5 70,30 40,75 10,30" fill="'+c+'" stroke="#fff" stroke-width="2"/><polygon points="40,5 55,30 40,40 25,30" fill="#fff" opacity=".3"/></svg>';
+  if (shape==="crown") return '<svg viewBox="0 0 80 80" class="nft-img"><path d="M10,60 L10,30 L25,45 L40,15 L55,45 L70,30 L70,60 Z" fill="'+c+'" stroke="#fff" stroke-width="2"/><circle cx="40" cy="55" r="4" fill="#fff"/></svg>';
+  if (shape==="skull") return '<svg viewBox="0 0 80 80" class="nft-img"><ellipse cx="40" cy="40" rx="25" ry="28" fill="'+c+'"/><circle cx="30" cy="38" r="6" fill="#000"/><circle cx="50" cy="38" r="6" fill="#000"/><rect x="32" y="55" width="16" height="12" fill="#000"/></svg>';
+  if (shape==="star") return '<svg viewBox="0 0 80 80" class="nft-img"><polygon points="40,5 50,32 78,32 55,50 63,78 40,60 17,78 25,50 2,32 30,32" fill="'+c+'" stroke="#fff" stroke-width="1"/></svg>';
+  if (shape==="rocket") return '<svg viewBox="0 0 80 80" class="nft-img"><polygon points="40,5 52,30 52,60 28,60 28,30" fill="'+c+'" stroke="#fff" stroke-width="2"/><polygon points="40,5 52,30 28,30" fill="#fff" opacity=".3"/><polygon points="28,60 20,72 28,72" fill="#ff3a5a"/><polygon points="52,60 60,72 52,72" fill="#ff3a5a"/></svg>';
+  if (shape==="planet") return '<svg viewBox="0 0 80 80" class="nft-img"><circle cx="40" cy="40" r="25" fill="'+c+'"/><ellipse cx="40" cy="40" rx="38" ry="8" fill="none" stroke="#fff" stroke-width="2" transform="rotate(-20 40 40)"/></svg>';
   return '';
 }
 
@@ -288,7 +286,7 @@ function fmt(k){ return (k/100).toFixed(2); }
 async function loadBalance() {
   if (!user) return;
   try {
-    const r = await fetch(`/api/balance?user_id=${user.id}`);
+    const r = await fetch('/api/balance?user_id=' + user.id);
     const d = await r.json();
     balance = d.balance; inventory = d.inventory || [];
     updateUI();
@@ -371,7 +369,7 @@ async function confirmRocketBet() {
   document.getElementById('rocket-confirm').style.display='none';
   document.getElementById('rocket-status').textContent='РАКЕТА СТАРТУЕТ...';
   document.getElementById('bets-list').innerHTML =
-    `<div class="bet-row"><span class="name">${user?.first_name||'Вы'}</span><span class="amount">${fmt(rocketBet)} ₽</span></div>`;
+    '<div class="bet-row"><span class="name">'+(user?.first_name||'Вы')+'</span><span class="amount">'+fmt(rocketBet)+' ₽</span></div>';
   const cd = document.getElementById('countdown');
   cd.classList.remove('hidden');
   for(let i=10;i>=1;i--){
@@ -386,12 +384,6 @@ async function confirmRocketBet() {
     rocketBottom=Math.min(370, rocketBottom+2.2);
     document.getElementById('rocket-svg').style.bottom=rocketBottom+'px';
     document.getElementById('rocket-mult').textContent='x'+rocketMult.toFixed(2);
-    const stage=document.getElementById('rocket-stage');
-    const trail=document.createElement('div');
-    trail.className='trail';
-    trail.style.cssText=`position:absolute;left:calc(50% - 3px);bottom:${rocketBottom-15}px;width:6px;height:6px;background:#ffaa00;border-radius:50%;opacity:.6;`;
-    stage.appendChild(trail);
-    setTimeout(()=>trail.remove(),600);
     if(Math.random()<0.012){
       clearInterval(rocketInterval);rocketInterval=null;
       document.getElementById('rocket-mult').textContent='x'+rocketMult.toFixed(2);
@@ -508,12 +500,12 @@ function initWheel() {
   const colors=['#ff3a5a','#12122a','#ffaa00','#12122a','#4aff8a','#12122a','#4a3aff','#12122a','#ff3a5a','#12122a','#ffaa00','#12122a'];
   mults.forEach((m,i)=>{
     const seg=document.createElement('div');
-    seg.style.cssText=`position:absolute;width:50%;height:50%;top:0;left:50%;transform-origin:0% 100%;transform:rotate(${i*30}deg);background:${colors[i]};clip-path:polygon(0 0,100% 0,0 100%);`;
+    seg.style.cssText='position:absolute;width:50%;height:50%;top:0;left:50%;transform-origin:0% 100%;transform:rotate('+(i*30)+'deg);background:'+colors[i]+';clip-path:polygon(0 0,100% 0,0 100%);';
     wheel.appendChild(seg);
     const num=document.createElement('div');
     num.className='wheel-num';
     num.textContent=m===0?'—':'x'+m;
-    num.style.cssText=`position:absolute;top:20px;left:50%;transform:translateX(-50%) rotate(${i*30+15}deg);font-size:14px;font-weight:900;color:#fff;`;
+    num.style.cssText='position:absolute;top:20px;left:50%;transform:translateX(-50%) rotate('+(i*30+15)+'deg);font-size:14px;font-weight:900;color:#fff;';
     seg.appendChild(num);
   });
   document.getElementById('wheel-status').textContent='ВЫБЕРИ СТАВКУ';
@@ -529,7 +521,7 @@ async function playWheel(bet) {
   const mult=mults[idx];
   const wheel=document.getElementById('wheel-el');
   const targetDeg=360*6+(360-idx*30);
-  wheel.style.transform=`rotate(${targetDeg}deg)`;
+  wheel.style.transform='rotate('+targetDeg+'deg)';
   await new Promise(r=>setTimeout(r,5200));
   const win=Math.floor(bet*mult);
   if(win>0) await changeBalance(win);
@@ -545,9 +537,9 @@ function renderNFT() {
     const n=GIFTS[id];
     const d=document.createElement('div'); d.className='nft-card';
     d.innerHTML = svgIcon(n.shape, n.color) +
-      `<div class="nft-name">${n.name}</div>
-       <div class="nft-price">${fmt(n.price)} ₽</div>
-       <button class="nft-btn" onclick="buyNFT('${id}')">КУПИТЬ</button>`;
+      '<div class="nft-name">'+n.name+'</div>' +
+      '<div class="nft-price">'+fmt(n.price)+' ₽</div>' +
+      '<button class="nft-btn" onclick="buyNFT(\''+id+'\')">КУПИТЬ</button>';
     c.appendChild(d);
   });
 }
@@ -571,9 +563,9 @@ function renderInv() {
     const n=GIFTS[gid]; if(!n) return;
     const d=document.createElement('div'); d.className='nft-card';
     d.innerHTML = svgIcon(n.shape,n.color) +
-      `<div class="nft-name">${n.name}</div>
-       <div class="nft-price">${fmt(n.price)} ₽</div>
-       <button class="nft-btn" style="background:linear-gradient(135deg,#ff3a5a,#cc2244);" onclick="sellNFT(${i})">ПРОДАТЬ</button>`;
+      '<div class="nft-name">'+n.name+'</div>' +
+      '<div class="nft-price">'+fmt(n.price)+' ₽</div>' +
+      '<button class="nft-btn" style="background:linear-gradient(135deg,#ff3a5a,#cc2244);" onclick="sellNFT('+i+')">ПРОДАТЬ</button>';
     c.appendChild(d);
   });
 }
@@ -593,9 +585,9 @@ function renderShop() {
     const n=GIFTS[id];
     const d=document.createElement('div'); d.className='nft-card'; d.style.marginBottom='10px';
     d.innerHTML = svgIcon(n.shape,n.color) +
-      `<div class="nft-name">${n.name}</div>
-       <div class="nft-price">${fmt(n.price)} ₽</div>
-       <button class="nft-btn" onclick="buyNFT('${id}')">КУПИТЬ</button>`;
+      '<div class="nft-name">'+n.name+'</div>' +
+      '<div class="nft-price">'+fmt(n.price)+' ₽</div>' +
+      '<button class="nft-btn" onclick="buyNFT(\''+id+'\')">КУПИТЬ</button>';
     c.appendChild(d);
   });
 }
@@ -675,7 +667,7 @@ async def start_web():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
-    print(f"✅ Web server on port {PORT}")
+    print("✅ Web server on port " + str(PORT))
 
 async def main():
     migrate_db()
