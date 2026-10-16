@@ -40,7 +40,7 @@ GIFTS = {
     "3": {"name":"ЧЕРЕП","price":3000,"color":"#ff3a5a"},
     "4": {"name":"ЗВЕЗДА","price":25000,"color":"#ffaa00"},
     "5": {"name":"РАКЕТА","price":50000,"color":"#4a3aff"},
-    "6": {"name":"ПЛАНЕТА","price":100000,"color":"#4aff8a"},
+    "6": {"name":"ПЛАНЕТА","price":100000,"color":"#4aff8a"}
 }
 
 HTML_PAGE = """<!DOCTYPE html>
@@ -111,6 +111,7 @@ h2{font-size:16px;margin-bottom:14px;text-align:center;font-weight:800;letter-sp
 .nft-btn{background:linear-gradient(135deg,#4a3aff,#6a4aff);border:none;color:#fff;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;margin-top:4px}
 </style>
 </head><body>
+
 <div id="menu" class="screen active">
   <div class="balance"><h1>БАЛАНС</h1><div class="amount"><span id="balance">100.00</span> ₽</div></div>
   <div class="games">
@@ -244,6 +245,7 @@ h2{font-size:16px;margin-bottom:14px;text-align:center;font-weight:800;letter-sp
   <button class="back" onclick="goMenu()">← НАЗАД</button><h2>МАГАЗИН</h2>
   <div id="shop-list"></div>
 </div>
+
 <script>
 const tg = window.Telegram.WebApp; tg.ready(); tg.expand();
 const user = tg.initDataUnsafe?.user;
@@ -308,7 +310,6 @@ function makeBetButtons(id,cb){
   BETS.forEach(b=>{const btn=document.createElement('button');btn.className='bet-btn';btn.textContent=fmt(b)+' ₽';btn.onclick=()=>cb(b);c.appendChild(btn);});
 }
 
-// РАКЕТА
 function initRocket(){
   if(gameLoop){clearInterval(gameLoop);gameLoop=null;}
   if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null;}
@@ -388,7 +389,6 @@ async function cashoutRocket(){
   setTimeout(initRocket,3000);
 }
 
-// ПЛИНКО
 function initPlinko(){
   const stage=document.getElementById('plinko-stage');
   stage.querySelectorAll('.peg,.ball').forEach(e=>e.remove());
@@ -418,7 +418,6 @@ async function playPlinko(bet){
   setTimeout(initPlinko,3000);
 }
 
-// РУЛЕТКА
 function initWheel(){
   const wheel=document.getElementById('wheel-el');
   wheel.style.transition='none';wheel.style.transform='rotate(0deg)';
@@ -450,7 +449,6 @@ async function playWheel(bet){
   setTimeout(initWheel,3000);
 }
 
-// МИНЫ
 function initMines(){
   minesBet=0;minesField=[];minesOpened=0;minesMult=1.0;minesActive=false;
   document.getElementById('mines-status').textContent='ВЫБЕРИ СТАВКУ';
@@ -495,7 +493,6 @@ async function cashoutMines(){
   setTimeout(initMines,3000);
 }
 
-// СЛОТЫ
 function initSlots(){document.getElementById('slots-status').textContent='ВЫБЕРИ СТАВКУ';makeBetButtons('slots-buttons',playSlots);}
 async function playSlots(bet){
   if(bet>balance){tg.showAlert('Недостаточно средств');return;}
@@ -514,7 +511,6 @@ async function playSlots(bet){
   setTimeout(initSlots,2500);
 }
 
-// КОСТИ
 function initDice(){dicePick=0;document.getElementById('dice-display').textContent='🎲';document.getElementById('dice-status').textContent='ВЫБЕРИ ЧИСЛО И СТАВКУ';makeBetButtons('dice-buttons',playDice);}
 function pickDice(n){dicePick=n;document.getElementById('dice-status').textContent='ВЫБРАНО: '+n+' | ВЫБЕРИ СТАВКУ';}
 async function playDice(bet){
@@ -531,7 +527,6 @@ async function playDice(bet){
   setTimeout(initDice,3000);
 }
 
-// МОНЕТКА
 function initCoin(){coinPick='';document.getElementById('coin-display').textContent='?';document.getElementById('coin-status').textContent='ВЫБЕРИ СТОРОНУ';makeBetButtons('coin-buttons',playCoin);}
 function pickCoin(s){coinPick=s;document.getElementById('coin-status').textContent='ВЫБРАНО: '+(s==='О'?'ОРЁЛ':'РЕШКА')+' | ВЫБЕРИ СТАВКУ';}
 async function playCoin(bet){
@@ -550,7 +545,6 @@ async function playCoin(bet){
   setTimeout(initCoin,3000);
 }
 
-// КЕЙСЫ
 function initCase(){
   const c=document.getElementById('case-display');c.innerHTML='';
   const all=['💎','👑','💀','⭐','🚀','🪐','🎁','💰','🔮','🍀'];
@@ -565,7 +559,6 @@ async function openCase(){
   document.getElementById('case-status').textContent='ВЫПАЛО: '+win.name+' ('+fmt(win.price)+' ₽)';
 }
 
-// 21
 function initBJ(){
   bjPlayer=[];bjDealer=[];bjActive=false;bjBet=0;
   document.getElementById('bj-player').textContent='—';document.getElementById('bj-dealer').textContent='—';
@@ -602,7 +595,6 @@ async function bjStand(){
   document.getElementById('bj-actions').style.display='none';setTimeout(initBJ,3000);
 }
 
-// КРАШ
 function initCrash(){
   crashBet=0;crashRunning=false;crashMult=1.0;
   if(crashLoop){clearInterval(crashLoop);crashLoop=null;}
@@ -633,7 +625,6 @@ async function cashoutCrash(){
   setTimeout(initCrash,3000);
 }
 
-// ДАРТС
 function initDart(){document.getElementById('dart-status').textContent='ВЫБЕРИ СТАВКУ';makeBetButtons('dart-buttons',playDart);}
 async function playDart(bet){
   if(bet>balance){tg.showAlert('Недостаточно средств');return;}
@@ -645,7 +636,6 @@ async function playDart(bet){
   setTimeout(initDart,3000);
 }
 
-// NFT
 function renderNFT(){
   const c=document.getElementById('nft-list');c.innerHTML='';
   Object.keys(GIFTS).forEach(id=>{
@@ -681,7 +671,7 @@ function renderShop(){
     c.appendChild(d);
   });
 }
-loadBalance();
+window.onload=function(){loadBalance();};
 </script>
 </body>
 </html>
@@ -759,7 +749,6 @@ async def start_web():
     print("✅ Web server on port " + str(PORT))
 
 async def main():
-    migrate_db()
     await start_web()
     print("🤖 Bot started")
     await dp.start_polling(bot)
