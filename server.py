@@ -389,7 +389,7 @@ function makeBetButtons(id, cb) {
     btn.onclick=()=>cb(b); c.appendChild(btn);
   });
 }
-// РАКЕТА
+// ===== РАКЕТА =====
 function initRocket() {
   if(gameLoop){clearInterval(gameLoop);gameLoop=null;}
   if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null;}
@@ -517,7 +517,8 @@ async function cashoutRocket() {
   document.getElementById('rocket-status').textContent='ЗАБРАЛ '+fmt(win)+' ₽ (x'+rocketMult.toFixed(2)+')';
   setTimeout(initRocket,3000);
 }
-// ПЛИНКО
+
+// ===== ПЛИНКО =====
 function initPlinko() {
   const stage=document.getElementById('plinko-stage');
   stage.querySelectorAll('.peg,.ball').forEach(e=>e.remove());
@@ -572,7 +573,8 @@ async function playPlinko(bet) {
   document.getElementById('plinko-status').innerHTML='x'+mult+' → '+(win?('+'+fmt(win)+' ₽'):'МИМО');
   setTimeout(initPlinko,3000);
 }
-// РУЛЕТКА
+
+// ===== РУЛЕТКА =====
 function initWheel() {
   const wheel=document.getElementById('wheel-el');
   wheel.style.transition='none'; wheel.style.transform='rotate(0deg)';
@@ -606,7 +608,8 @@ async function playWheel(bet) {
   document.getElementById('wheel-status').textContent='ВЫПАЛО '+idx+'. '+(win?('ВЫИГРЫШ '+fmt(win)+' ₽'):'МИМО');
   setTimeout(initWheel,3000);
 }
-// МИНЫ
+
+// ===== МИНЫ =====
 function initMines() {
   minesBet=0; minesField=[]; minesOpened=0; minesMult=1.0; minesActive=false;
   document.getElementById('mines-status').textContent='ВЫБЕРИ СТАВКУ';
@@ -662,7 +665,7 @@ async function cashoutMines() {
   document.getElementById('mines-status').textContent='ЗАБРАЛ '+fmt(win)+' ₽ (x'+minesMult.toFixed(2)+')';
   setTimeout(initMines,3000);
 }
-// СЛОТЫ
+// ===== СЛОТЫ =====
 function initSlots() {
   document.getElementById('slots-status').textContent='ВЫБЕРИ СТАВКУ';
   makeBetButtons('slots-buttons', playSlots);
@@ -688,7 +691,8 @@ async function playSlots(bet) {
   document.getElementById('slots-status').textContent=mult?('ВЫИГРЫШ: +'+fmt(win)+' ₽ (x'+mult+')'):'НЕ ПОВЕЗЛО';
   setTimeout(initSlots,2500);
 }
-// КОСТИ
+
+// ===== КОСТИ =====
 function initDice() {
   dicePick=0;
   document.getElementById('dice-display').textContent='🎲';
@@ -709,7 +713,8 @@ async function playDice(bet) {
   else { document.getElementById('dice-status').textContent='ВЫПАЛО '+result+'. МИМО'; }
   setTimeout(initDice,3000);
 }
-// МОНЕТКА
+
+// ===== МОНЕТКА =====
 function initCoin() {
   coinPick='';
   document.getElementById('coin-display').textContent='?';
@@ -732,7 +737,8 @@ async function playCoin(bet) {
   else { document.getElementById('coin-status').textContent='МИМО'; }
   setTimeout(initCoin,3000);
 }
-// КЕЙСЫ
+
+// ===== КЕЙСЫ =====
 function initCase() {
   const c=document.getElementById('case-display'); c.innerHTML='';
   const all=['💎','👑','💀','⭐','🚀','🪐','🎁','💰','🔮','🍀'];
@@ -752,7 +758,8 @@ async function openCase() {
   await fetch('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.id, gift_id:winId})});
   document.getElementById('case-status').textContent='ВЫПАЛО: '+win.name+' ('+fmt(win.price)+' ₽)';
 }
-// 21 ОЧКО
+
+// ===== 21 ОЧКО =====
 function initBJ() {
   bjPlayer=[]; bjDealer=[]; bjActive=false; bjBet=0;
   document.getElementById('bj-player').textContent='—';
@@ -795,7 +802,8 @@ async function bjStand() {
   document.getElementById('bj-actions').style.display='none';
   setTimeout(initBJ,3000);
 }
-// КРАШ
+
+// ===== КРАШ =====
 function initCrash() {
   crashBet=0; crashRunning=false; crashMult=1.0;
   if(crashLoop){clearInterval(crashLoop);crashLoop=null;}
@@ -834,7 +842,8 @@ async function cashoutCrash() {
   document.getElementById('crash-status').textContent='ЗАБРАЛ '+fmt(win)+' ₽';
   setTimeout(initCrash,3000);
 }
-// ДАРТС
+
+// ===== ДАРТС =====
 function initDart() {
   document.getElementById('dart-status').textContent='ВЫБЕРИ СТАВКУ';
   makeBetButtons('dart-buttons', playDart);
@@ -853,7 +862,8 @@ async function playDart(bet) {
   document.getElementById('dart-status').textContent=name+(win?(' +'+fmt(win)+' ₽'):'');
   setTimeout(initDart,3000);
 }
-// NFT
+
+// ===== NFT =====
 function renderNFT() {
   const c=document.getElementById('nft-list'); c.innerHTML='';
   Object.keys(GIFTS).forEach(id=>{
@@ -896,6 +906,7 @@ function renderShop() {
     c.appendChild(d);
   });
 }
+
 loadBalance();
 </script>
 </body>
