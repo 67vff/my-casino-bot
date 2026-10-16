@@ -201,9 +201,7 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 <div id="plinko" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>ПЛИНКО</h2>
-  <div class="plinko-stage" id="plinko-stage">
-    <div class="plinko-bottom" id="plinko-bottom"></div>
-  </div>
+  <div class="plinko-stage" id="plinko-stage"><div class="plinko-bottom" id="plinko-bottom"></div></div>
   <div id="plinko-status" style="text-align:center;margin-top:10px;font-size:12px;">ВЫБЕРИ СТАВКУ</div>
   <div class="bet-buttons" id="plinko-buttons"></div>
 </div>
@@ -211,11 +209,7 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 <div id="wheel" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>РУЛЕТКА</h2>
-  <div class="wheel-wrap">
-    <div class="pointer"></div>
-    <div class="wheel" id="wheel-el"></div>
-    <div class="wheel-center">SPIN</div>
-  </div>
+  <div class="wheel-wrap"><div class="pointer"></div><div class="wheel" id="wheel-el"></div><div class="wheel-center">SPIN</div></div>
   <div id="wheel-status" style="text-align:center;font-size:13px;min-height:30px;">ВЫБЕРИ СТАВКУ</div>
   <div class="bet-buttons" id="wheel-buttons"></div>
 </div>
@@ -232,11 +226,7 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
 <div id="slots" class="screen">
   <button class="back" onclick="goMenu()">← НАЗАД</button>
   <h2>СЛОТЫ</h2>
-  <div class="slots">
-    <div class="slot" id="slot0">🍒</div>
-    <div class="slot" id="slot1">🍒</div>
-    <div class="slot" id="slot2">🍒</div>
-  </div>
+  <div class="slots"><div class="slot" id="slot0">🍒</div><div class="slot" id="slot1">🍒</div><div class="slot" id="slot2">🍒</div></div>
   <div id="slots-status" style="text-align:center;font-size:13px;min-height:30px;">ВЫБЕРИ СТАВКУ</div>
   <div class="bet-buttons" id="slots-buttons"></div>
 </div>
@@ -247,12 +237,7 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
   <div class="dice-display" id="dice-display">🎲</div>
   <div id="dice-status" style="text-align:center;font-size:13px;min-height:30px;">ВЫБЕРИ ЧИСЛО</div>
   <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:10px;">
-    <button class="bet-btn" onclick="pickDice(1)">1</button>
-    <button class="bet-btn" onclick="pickDice(2)">2</button>
-    <button class="bet-btn" onclick="pickDice(3)">3</button>
-    <button class="bet-btn" onclick="pickDice(4)">4</button>
-    <button class="bet-btn" onclick="pickDice(5)">5</button>
-    <button class="bet-btn" onclick="pickDice(6)">6</button>
+    <button class="bet-btn" onclick="pickDice(1)">1</button><button class="bet-btn" onclick="pickDice(2)">2</button><button class="bet-btn" onclick="pickDice(3)">3</button><button class="bet-btn" onclick="pickDice(4)">4</button><button class="bet-btn" onclick="pickDice(5)">5</button><button class="bet-btn" onclick="pickDice(6)">6</button>
   </div>
   <div class="bet-buttons" id="dice-buttons"></div>
 </div>
@@ -263,8 +248,7 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
   <div class="coin" id="coin-display">?</div>
   <div id="coin-status" style="text-align:center;font-size:13px;min-height:30px;">ВЫБЕРИ СТОРОНУ</div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
-    <button class="bet-btn" onclick="pickCoin('О')">ОРЁЛ</button>
-    <button class="bet-btn" onclick="pickCoin('Р')">РЕШКА</button>
+    <button class="bet-btn" onclick="pickCoin('О')">ОРЁЛ</button><button class="bet-btn" onclick="pickCoin('Р')">РЕШКА</button>
   </div>
   <div class="bet-buttons" id="coin-buttons"></div>
 </div>
@@ -285,8 +269,7 @@ h2 { font-size:16px; margin-bottom:14px; text-align:center; font-weight:800; let
   <div id="bj-status" style="text-align:center;font-size:13px;min-height:30px;">ВЫБЕРИ СТАВКУ</div>
   <div class="bet-buttons" id="bj-buttons"></div>
   <div id="bj-actions" style="display:none;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">
-    <button class="bet-btn" onclick="bjHit()">ЕЩЁ</button>
-    <button class="bet-btn" onclick="bjStand()">ХВАТИТ</button>
+    <button class="bet-btn" onclick="bjHit()">ЕЩЁ</button><button class="bet-btn" onclick="bjStand()">ХВАТИТ</button>
   </div>
 </div>
 
@@ -345,7 +328,6 @@ const GIFTS = {
   "5": {name:"РАКЕТА", price:50000, color:"#4a3aff", shape:"rocket"},
   "6": {name:"ПЛАНЕТА", price:100000, color:"#4aff8a", shape:"planet"},
 };
-
 function svgIcon(shape, c) {
   if (shape==="diamond") return '<svg viewBox="0 0 80 80" class="nft-img"><polygon points="40,5 70,30 40,75 10,30" fill="'+c+'" stroke="#fff" stroke-width="2"/></svg>';
   if (shape==="crown") return '<svg viewBox="0 0 80 80" class="nft-img"><path d="M10,60 L10,30 L25,45 L40,15 L55,45 L70,30 L70,60 Z" fill="'+c+'" stroke="#fff" stroke-width="2"/></svg>';
@@ -356,7 +338,6 @@ function svgIcon(shape, c) {
   return '';
 }
 function fmt(k){ return (k/100).toFixed(2); }
-
 async function loadBalance() {
   if (!user) return;
   try {
@@ -408,7 +389,7 @@ function makeBetButtons(id, cb) {
     btn.onclick=()=>cb(b); c.appendChild(btn);
   });
 }
-// ===== РАКЕТА =====
+// РАКЕТА
 function initRocket() {
   if(gameLoop){clearInterval(gameLoop);gameLoop=null;}
   if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null;}
@@ -536,8 +517,7 @@ async function cashoutRocket() {
   document.getElementById('rocket-status').textContent='ЗАБРАЛ '+fmt(win)+' ₽ (x'+rocketMult.toFixed(2)+')';
   setTimeout(initRocket,3000);
 }
-
-// ===== ПЛИНКО =====
+// ПЛИНКО
 function initPlinko() {
   const stage=document.getElementById('plinko-stage');
   stage.querySelectorAll('.peg,.ball').forEach(e=>e.remove());
@@ -592,8 +572,7 @@ async function playPlinko(bet) {
   document.getElementById('plinko-status').innerHTML='x'+mult+' → '+(win?('+'+fmt(win)+' ₽'):'МИМО');
   setTimeout(initPlinko,3000);
 }
-
-// ===== РУЛЕТКА =====
+// РУЛЕТКА
 function initWheel() {
   const wheel=document.getElementById('wheel-el');
   wheel.style.transition='none'; wheel.style.transform='rotate(0deg)';
@@ -627,8 +606,7 @@ async function playWheel(bet) {
   document.getElementById('wheel-status').textContent='ВЫПАЛО '+idx+'. '+(win?('ВЫИГРЫШ '+fmt(win)+' ₽'):'МИМО');
   setTimeout(initWheel,3000);
 }
-
-// ===== МИНЫ =====
+// МИНЫ
 function initMines() {
   minesBet=0; minesField=[]; minesOpened=0; minesMult=1.0; minesActive=false;
   document.getElementById('mines-status').textContent='ВЫБЕРИ СТАВКУ';
@@ -684,8 +662,7 @@ async function cashoutMines() {
   document.getElementById('mines-status').textContent='ЗАБРАЛ '+fmt(win)+' ₽ (x'+minesMult.toFixed(2)+')';
   setTimeout(initMines,3000);
 }
-
-// ===== СЛОТЫ =====
+// СЛОТЫ
 function initSlots() {
   document.getElementById('slots-status').textContent='ВЫБЕРИ СТАВКУ';
   makeBetButtons('slots-buttons', playSlots);
@@ -711,8 +688,7 @@ async function playSlots(bet) {
   document.getElementById('slots-status').textContent=mult?('ВЫИГРЫШ: +'+fmt(win)+' ₽ (x'+mult+')'):'НЕ ПОВЕЗЛО';
   setTimeout(initSlots,2500);
 }
-
-// ===== КОСТИ =====
+// КОСТИ
 function initDice() {
   dicePick=0;
   document.getElementById('dice-display').textContent='🎲';
@@ -733,8 +709,7 @@ async function playDice(bet) {
   else { document.getElementById('dice-status').textContent='ВЫПАЛО '+result+'. МИМО'; }
   setTimeout(initDice,3000);
 }
-
-// ===== МОНЕТКА =====
+// МОНЕТКА
 function initCoin() {
   coinPick='';
   document.getElementById('coin-display').textContent='?';
@@ -757,8 +732,7 @@ async function playCoin(bet) {
   else { document.getElementById('coin-status').textContent='МИМО'; }
   setTimeout(initCoin,3000);
 }
-
-// ===== КЕЙСЫ =====
+// КЕЙСЫ
 function initCase() {
   const c=document.getElementById('case-display'); c.innerHTML='';
   const all=['💎','👑','💀','⭐','🚀','🪐','🎁','💰','🔮','🍀'];
@@ -778,8 +752,7 @@ async function openCase() {
   await fetch('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.id, gift_id:winId})});
   document.getElementById('case-status').textContent='ВЫПАЛО: '+win.name+' ('+fmt(win.price)+' ₽)';
 }
-
-// ===== 21 ОЧКО =====
+// 21 ОЧКО
 function initBJ() {
   bjPlayer=[]; bjDealer=[]; bjActive=false; bjBet=0;
   document.getElementById('bj-player').textContent='—';
@@ -822,8 +795,7 @@ async function bjStand() {
   document.getElementById('bj-actions').style.display='none';
   setTimeout(initBJ,3000);
 }
-
-// ===== КРАШ =====
+// КРАШ
 function initCrash() {
   crashBet=0; crashRunning=false; crashMult=1.0;
   if(crashLoop){clearInterval(crashLoop);crashLoop=null;}
@@ -862,8 +834,7 @@ async function cashoutCrash() {
   document.getElementById('crash-status').textContent='ЗАБРАЛ '+fmt(win)+' ₽';
   setTimeout(initCrash,3000);
 }
-
-// ===== ДАРТС =====
+// ДАРТС
 function initDart() {
   document.getElementById('dart-status').textContent='ВЫБЕРИ СТАВКУ';
   makeBetButtons('dart-buttons', playDart);
@@ -882,8 +853,7 @@ async function playDart(bet) {
   document.getElementById('dart-status').textContent=name+(win?(' +'+fmt(win)+' ₽'):'');
   setTimeout(initDart,3000);
 }
-
-// ===== NFT =====
+// NFT
 function renderNFT() {
   const c=document.getElementById('nft-list'); c.innerHTML='';
   Object.keys(GIFTS).forEach(id=>{
@@ -926,11 +896,12 @@ function renderShop() {
     c.appendChild(d);
   });
 }
-
 loadBalance();
 </script>
 </body>
 </html>
+"""
+
 async def handle_index(request):
     return web.Response(text=HTML_PAGE, content_type="text/html")
 
