@@ -14,37 +14,50 @@ DB_FILE = os.path.join(DATA_DIR, "balances.json")
 def load_db():
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
-        except: return {}
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
     return {}
 
 def save_db(db):
-    with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, ensure_ascii=False)
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False)
 
 def get_user(uid):
-    db = load_db(); k = str(uid)
+    db = load_db()
+    k = str(uid)
     if k not in db or not isinstance(db[k], dict):
-        db[k] = {"balance": 10000, "inventory": []}; save_db(db)
+        db[k] = {"balance": 10000, "inventory": []}
+        save_db(db)
     return db[k]
 
 def save_user(uid, data):
-    db = load_db(); db[str(uid)] = data; save_db(db)
+    db = load_db()
+    db[str(uid)] = data
+    save_db(db)
 
 def update_balance(uid, delta):
-    u = get_user(uid); u["balance"] = max(0, u["balance"] + delta)
-    save_user(uid, u); return u["balance"]
+    u = get_user(uid)
+    u["balance"] = max(0, u["balance"] + delta)
+    save_user(uid, u)
+    return u["balance"]
 
 GIFTS = {
-    "1": {"name":"АЛМАЗ","price":5000,"color":"#88eeff"},
-    "2": {"name":"КОРОНА","price":15000,"color":"#ffdd44"},
-    "3": {"name":"ЧЕРЕП","price":3000,"color":"#ff3a5a"},
-    "4": {"name":"ЗВЕЗДА","price":25000,"color":"#ffaa00"},
-    "5": {"name":"РАКЕТА","price":50000,"color":"#4a3aff"},
-    "6": {"name":"ПЛАНЕТА","price":100000,"color":"#4aff8a"}
+    "1": {"name": "АЛМАЗ", "price": 5000, "color": "#88eeff"},
+    "2": {"name": "КОРОНА", "price": 15000, "color": "#ffdd44"},
+    "3": {"name": "ЧЕРЕП", "price": 3000, "color": "#ff3a5a"},
+    "4": {"name": "ЗВЕЗДА", "price": 25000, "color": "#ffaa00"},
+    "5": {"name": "РАКЕТА", "price": 50000, "color": "#4a3aff"},
+    "6": {"name": "ПЛАНЕТА", "price": 100000, "color": "#4aff8a"}
 }
 
 HTML_PAGE = """<!DOCTYPE html>
-<html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>CASINO</title>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>CASINO</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-family:-apple-system,sans-serif}
@@ -110,7 +123,8 @@ h2{font-size:16px;margin-bottom:14px;text-align:center;font-weight:800;letter-sp
 .nft-price{font-size:10px;color:#4aff8a;margin:4px 0}
 .nft-btn{background:linear-gradient(135deg,#4a3aff,#6a4aff);border:none;color:#fff;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;margin-top:4px}
 </style>
-</head><body>
+</head>
+<body>
 
 <div id="menu" class="screen active">
   <div class="balance"><h1>БАЛАНС</h1><div class="amount"><span id="balance">100.00</span> ₽</div></div>
@@ -683,7 +697,7 @@ async def handle_index(request):
 async def handle_get_balance(request):
     user_id = request.query.get("user_id")
     if not user_id:
-        return web.json_response({"error":"no user_id"}, status=400)
+        return web.json_response({"error": "no user_id"}, status=400)
     u = get_user(int(user_id))
     return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
 
@@ -701,10 +715,10 @@ async def handle_buy(request):
     gift_id = str(data["gift_id"])
     u = get_user(user_id)
     if gift_id not in GIFTS:
-        return web.json_response({"error":"Нет такого подарка"}, status=400)
+        return web.json_response({"error": "Нет такого подарка"}, status=400)
     price = GIFTS[gift_id]["price"]
     if u["balance"] < price:
-        return web.json_response({"error":"Недостаточно средств"})
+        return web.json_response({"error": "Недостаточно средств"})
     u["balance"] -= price
     u["inventory"].append(gift_id)
     save_user(user_id, u)
@@ -716,7 +730,7 @@ async def handle_sell(request):
     index = int(data["index"])
     u = get_user(user_id)
     if index < 0 or index >= len(u["inventory"]):
-        return web.json_response({"error":"Нет такого предмета"}, status=400)
+        return web.json_response({"error": "Нет такого предмета"}, status=400)
     gift_id = u["inventory"].pop(index)
     price = GIFTS[gift_id]["price"]
     u["balance"] += price
