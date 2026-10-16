@@ -261,8 +261,16 @@ h2{font-size:16px;margin-bottom:14px;text-align:center;font-weight:800;letter-sp
 </div>
 
 <script>
-const tg = window.Telegram.WebApp; tg.ready(); tg.expand();
-const user = tg.initDataUnsafe?.user;
+// ==== БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ ====
+let tg = null;
+try {
+  tg = window.Telegram?.WebApp || null;
+  if (tg) { tg.ready(); tg.expand(); }
+} catch(e) { console.log('Telegram WebApp не загружен:', e); }
+
+const user = tg?.initDataUnsafe?.user || { id: 0 };
+console.log('USER:', user);
+
 const BETS = [100, 500, 1000, 5000];
 let balance = 10000, inventory = [];
 let rocketBet=0, rocketRunning=false, rocketMult=1.0, rocketX=50, rocketY=20, fuel=100, rocketVelocity=0;
@@ -282,17 +290,24 @@ const GIFTS = {
 };
 function svgIcon(c){return '<svg viewBox="0 0 80 80" class="nft-img"><circle cx="40" cy="40" r="25" fill="'+c+'"/><ellipse cx="40" cy="40" rx="38" ry="8" fill="none" stroke="#fff" stroke-width="2" transform="rotate(-20 40 40)"/></svg>';}
 function fmt(k){return (k/100).toFixed(2);}
+function showAlert(msg){ if(tg && tg.showAlert) tg.showAlert(msg); else alert(msg); }
 
 async function loadBalance(){
-  if(!user)return;
-  try{const r=await fetch('/api/balance?user_id='+user.id);const d=await r.json();balance=d.balance;inventory=d.inventory||[];updateUI();}catch(e){}
+  try{
+    const r = await fetch('/api/balance?user_id='+user.id);
+    const d = await r.json();
+    balance = d.balance; inventory = d.inventory || []; updateUI();
+  }catch(e){ console.log('loadBalance error:', e); }
 }
 async function changeBalance(delta){
-  if(!user)return;
-  const r=await fetch('/api/balance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.id,delta})});
-  const d=await r.json();balance=d.balance;inventory=d.inventory||[];updateUI();
+  try{
+    const r = await fetch('/api/balance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.id,delta})});
+    const d = await r.json();
+    balance = d.balance; inventory = d.inventory || []; updateUI();
+  }catch(e){ console.log('changeBalance error:', e); }
 }
-function updateUI(){document.getElementById('balance').textContent=fmt(balance);}
+function updateUI(){ const el = document.getElementById('balance'); if(el) el.textContent = fmt(balance); }
+
 function goMenu(){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('menu').classList.add('active');
@@ -320,7 +335,7 @@ function openGame(n){
   if(n==='shop')renderShop();
 }
 function makeBetButtons(id,cb){
-  const c=document.getElementById(id);c.innerHTML='';
+  const c=document.getElementById(id); if(!c) return; c.innerHTML='';
   BETS.forEach(b=>{const btn=document.createElement('button');btn.className='bet-btn';btn.textContent=fmt(b)+' ₽';btn.onclick=()=>cb(b);c.appendChild(btn);});
 }
 
@@ -342,7 +357,7 @@ function initRocket(){
   makeBetButtons('rocket-buttons',selectRocketBet);
   startCountdown();
 }
-function selectRocketBet(b){if(b>balance){tg.showAlert('Недостаточно средств');return;}if(rocketRunning){tg.showAlert('Ракета уже летит');return;}rocketBet=b;}
+function selectRocketBet(b){if(b>balance){showAlert('Недостаточно средств');return;}if(rocketRunning){showAlert('Ракета уже летит');return;}rocketBet=b;}
 function startCountdown(){
   let t=10;const cd=document.getElementById('countdown');cd.classList.remove('hidden');cd.textContent=t;
   countdownTimer=setInterval(async()=>{t--;if(t<=0){clearInterval(countdownTimer);countdownTimer=null;cd.classList.add('hidden');if(rocketBet>0){await changeBalance(-rocketBet);launchRocket();}else{setTimeout(initRocket,500);}return;}cd.textContent=t;},1000);
@@ -415,7 +430,7 @@ function initPlinko(){
   makeBetButtons('plinko-buttons',playPlinko);
 }
 async function playPlinko(bet){
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   await changeBalance(-bet);
   document.getElementById('plinko-buttons').innerHTML='';
   document.getElementById('plinko-status').textContent='ШАРИК ПАДАЕТ...';
@@ -450,7 +465,7 @@ function initWheel(){
   makeBetButtons('wheel-buttons',playWheel);
 }
 async function playWheel(bet){
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   await changeBalance(-bet);
   document.getElementById('wheel-buttons').innerHTML='';
   document.getElementById('wheel-status').textContent='КРУТИМ...';
@@ -471,7 +486,7 @@ function initMines(){
   makeBetButtons('mines-buttons',startMines);
 }
 async function startMines(bet){
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   if(minesActive)return;
   minesBet=bet;minesOpened=0;minesMult=1.0;minesActive=true;
   await changeBalance(-bet);
@@ -509,7 +524,7 @@ async function cashoutMines(){
 
 function initSlots(){document.getElementById('slots-status').textContent='ВЫБЕРИ СТАВКУ';makeBetButtons('slots-buttons',playSlots);}
 async function playSlots(bet){
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   await changeBalance(-bet);
   const symbols=['🍒','🍋','🍊','💎','7️⃣'];
   document.getElementById('slots-buttons').innerHTML='';
@@ -528,8 +543,8 @@ async function playSlots(bet){
 function initDice(){dicePick=0;document.getElementById('dice-display').textContent='🎲';document.getElementById('dice-status').textContent='ВЫБЕРИ ЧИСЛО И СТАВКУ';makeBetButtons('dice-buttons',playDice);}
 function pickDice(n){dicePick=n;document.getElementById('dice-status').textContent='ВЫБРАНО: '+n+' | ВЫБЕРИ СТАВКУ';}
 async function playDice(bet){
-  if(!dicePick){tg.showAlert('Выбери число');return;}
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(!dicePick){showAlert('Выбери число');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   await changeBalance(-bet);
   document.getElementById('dice-buttons').innerHTML='';
   await new Promise(r=>setTimeout(r,1000));
@@ -544,8 +559,8 @@ async function playDice(bet){
 function initCoin(){coinPick='';document.getElementById('coin-display').textContent='?';document.getElementById('coin-status').textContent='ВЫБЕРИ СТОРОНУ';makeBetButtons('coin-buttons',playCoin);}
 function pickCoin(s){coinPick=s;document.getElementById('coin-status').textContent='ВЫБРАНО: '+(s==='О'?'ОРЁЛ':'РЕШКА')+' | ВЫБЕРИ СТАВКУ';}
 async function playCoin(bet){
-  if(!coinPick){tg.showAlert('Выбери сторону');return;}
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(!coinPick){showAlert('Выбери сторону');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   await changeBalance(-bet);
   document.getElementById('coin-buttons').innerHTML='';
   const cd=document.getElementById('coin-display');
@@ -566,7 +581,7 @@ function initCase(){
   document.getElementById('case-status').textContent='ОТКРОЙ КЕЙС ЗА 500 ₽';
 }
 async function openCase(){
-  if(balance<500){tg.showAlert('Нужно 500 ₽');return;}
+  if(balance<500){showAlert('Нужно 500 ₽');return;}
   await changeBalance(-500);
   const keys=Object.keys(GIFTS);const winId=keys[Math.floor(Math.random()*keys.length)];const win=GIFTS[winId];
   await fetch('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.id,gift_id:winId})});
@@ -582,7 +597,7 @@ function initBJ(){
 }
 function bjCard(){return Math.floor(Math.random()*10)+1;}
 async function startBJ(bet){
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   bjBet=bet;bjActive=true;await changeBalance(-bet);
   bjPlayer=[bjCard(),bjCard()];bjDealer=[bjCard(),bjCard()];
   document.getElementById('bj-player').textContent=bjPlayer.join(' + ')+' = '+bjPlayer.reduce((a,b)=>a+b,0);
@@ -619,7 +634,7 @@ function initCrash(){
   makeBetButtons('crash-buttons',startCrash);
 }
 async function startCrash(bet){
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   crashBet=bet;crashMult=1.0;crashRunning=true;await changeBalance(-bet);
   document.getElementById('crash-buttons').innerHTML='';
   document.getElementById('crash-cashout').style.display='block';
@@ -641,7 +656,7 @@ async function cashoutCrash(){
 
 function initDart(){document.getElementById('dart-status').textContent='ВЫБЕРИ СТАВКУ';makeBetButtons('dart-buttons',playDart);}
 async function playDart(bet){
-  if(bet>balance){tg.showAlert('Недостаточно средств');return;}
+  if(bet>balance){showAlert('Недостаточно средств');return;}
   await changeBalance(-bet);document.getElementById('dart-buttons').innerHTML='';
   const r=Math.random();let mult=0,name='МИМО';
   if(r<0.05){mult=20;name='В ЯБЛОЧКО x20';}else if(r<0.15){mult=5;name='БЛИЗКО x5';}else if(r<0.4){mult=2;name='ПОПАЛ x2';}
@@ -660,8 +675,8 @@ function renderNFT(){
 }
 async function buyNFT(id){
   const r=await fetch('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.id,gift_id:id})});
-  const d=await r.json();if(d.error){tg.showAlert(d.error);return;}
-  balance=d.balance;inventory=d.inventory;updateUI();tg.showAlert('Куплено!');
+  const d=await r.json();if(d.error){showAlert(d.error);return;}
+  balance=d.balance;inventory=d.inventory;updateUI();showAlert('Куплено!');
 }
 function renderInv(){
   const c=document.getElementById('inv-list');c.innerHTML='';
@@ -674,7 +689,7 @@ function renderInv(){
 }
 async function sellNFT(index){
   const r=await fetch('/api/sell',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.id,index})});
-  const d=await r.json();if(d.error){tg.showAlert(d.error);return;}
+  const d=await r.json();if(d.error){showAlert(d.error);return;}
   balance=d.balance;inventory=d.inventory;updateUI();renderInv();
 }
 function renderShop(){
@@ -685,7 +700,7 @@ function renderShop(){
     c.appendChild(d);
   });
 }
-window.onload=function(){loadBalance();};
+window.addEventListener('load', function(){ loadBalance(); });
 </script>
 </body>
 </html>
@@ -695,47 +710,57 @@ async def handle_index(request):
     return web.Response(text=HTML_PAGE, content_type="text/html")
 
 async def handle_get_balance(request):
-    user_id = request.query.get("user_id")
-    if not user_id:
-        return web.json_response({"error": "no user_id"}, status=400)
-    u = get_user(int(user_id))
-    return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+    try:
+        user_id = request.query.get("user_id", "0")
+        u = get_user(int(user_id))
+        return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 async def handle_post_balance(request):
-    data = await request.json()
-    user_id = int(data["user_id"])
-    delta = int(data["delta"])
-    new = update_balance(user_id, delta)
-    u = get_user(user_id)
-    return web.json_response({"balance": new, "inventory": u["inventory"]})
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id", 0))
+        delta = int(data.get("delta", 0))
+        new = update_balance(user_id, delta)
+        u = get_user(user_id)
+        return web.json_response({"balance": new, "inventory": u["inventory"]})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 async def handle_buy(request):
-    data = await request.json()
-    user_id = int(data["user_id"])
-    gift_id = str(data["gift_id"])
-    u = get_user(user_id)
-    if gift_id not in GIFTS:
-        return web.json_response({"error": "Нет такого подарка"}, status=400)
-    price = GIFTS[gift_id]["price"]
-    if u["balance"] < price:
-        return web.json_response({"error": "Недостаточно средств"})
-    u["balance"] -= price
-    u["inventory"].append(gift_id)
-    save_user(user_id, u)
-    return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id", 0))
+        gift_id = str(data.get("gift_id", ""))
+        u = get_user(user_id)
+        if gift_id not in GIFTS:
+            return web.json_response({"error": "Нет такого подарка"}, status=400)
+        price = GIFTS[gift_id]["price"]
+        if u["balance"] < price:
+            return web.json_response({"error": "Недостаточно средств"})
+        u["balance"] -= price
+        u["inventory"].append(gift_id)
+        save_user(user_id, u)
+        return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 async def handle_sell(request):
-    data = await request.json()
-    user_id = int(data["user_id"])
-    index = int(data["index"])
-    u = get_user(user_id)
-    if index < 0 or index >= len(u["inventory"]):
-        return web.json_response({"error": "Нет такого предмета"}, status=400)
-    gift_id = u["inventory"].pop(index)
-    price = GIFTS[gift_id]["price"]
-    u["balance"] += price
-    save_user(user_id, u)
-    return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id", 0))
+        index = int(data.get("index", 0))
+        u = get_user(user_id)
+        if index < 0 or index >= len(u["inventory"]):
+            return web.json_response({"error": "Нет такого предмета"}, status=400)
+        gift_id = u["inventory"].pop(index)
+        price = GIFTS[gift_id]["price"]
+        u["balance"] += price
+        save_user(user_id, u)
+        return web.json_response({"balance": u["balance"], "inventory": u["inventory"]})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 app = web.Application()
 app.router.add_get("/", handle_index)
