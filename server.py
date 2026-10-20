@@ -216,7 +216,8 @@ async def start(message: Message, command: CommandObject, state: FSMContext):
     await message.answer(
         "👋 <b>Привет! Я бот-модератор.</b>\n\n"
         "Я помогаю следить за порядком в чатах с помощью ИИ.\n\n"
-        "Чтобы начать, добавь меня в свой чат (группу) как администратора.",
+        "Нажми «➕ Добавить чат» — я предложу добавить меня в группу "
+        "сразу с правами администратора.",
         reply_markup=main_menu(),
         parse_mode="HTML"
     )
@@ -226,16 +227,24 @@ async def start(message: Message, command: CommandObject, state: FSMContext):
 async def cb_add_channel(callback: CallbackQuery):
     await callback.answer()
     me = await bot.get_me()
+    # startgroup + admin=true → Telegram предложит сразу сделать бота админом
+    add_url = f"https://t.me/{me.username}?startgroup=true&admin=true"
     await callback.message.answer(
         "Чтобы добавить чат:\n\n"
-        "1. Добавь меня в чат (группу) как администратора\n"
-        "2. Я напишу в чат код\n"
-        "3. Скопируй код и отправь мне сюда\n\n"
-        "Или нажми кнопку ниже:",
+        "1. Нажми «➕ Добавить в чат как админа»\n"
+        "2. Выбери группу\n"
+        "3. Подтверди права администратора\n"
+        "4. Я напишу в чат код — отправь его мне сюда\n\n"
+        "Если Telegram не предложит права — после добавления зайди в "
+        "«Управление → Администраторы» и включи:\n"
+        "✅ Отправлять сообщения\n"
+        "✅ Удалять сообщения\n"
+        "✅ Банить пользователей\n"
+        "✅ Ограничивать участников",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
-                text="➕ Добавить в чат",
-                url=f"https://t.me/{me.username}?startgroup=true"
+                text="➕ Добавить в чат как админа",
+                url=add_url
             )]
         ])
     )
@@ -283,14 +292,30 @@ async def cb_settings(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
-# --- ПРИВЯЗКА ЧАТА (БОТ ДОБАВЛЕН В ГРУППУ) ---
-@dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> ADMINISTRATOR))
+# --- ПРИВЯЗКА ЧАТА (ЛЮБОЙ ПЕРЕХОД В АДМИНА) ---
+@dp.my_chat_member()
 async def on_bot_added(event: ChatMemberUpdated):
+    logger.info(
+        f"MY_CHAT_MEMBER: chat={event.chat.id} type={event.chat.type} "
+        f"title={event.chat.title!r} "
+        f"old={event.old_chat_member.status} new={event.new_chat_member.status}"
+    )
+
+    # Реагируем только когда бот стал админом
+    if event.new_chat_member.status != "administrator":
+        return
+
+    # Пропускаем каналы — там своя логика
+    if event.chat.type == ChatType.CHANNEL:
+        logger.info("Пропуск: это канал, а не группа")
+        return
+
     chat_id = event.chat.id
     chat_title = event.chat.title or "Без названия"
 
     existing = get_chat(chat_id)
     if existing and existing.get("owner_id"):
+        logger.info(f"Чат {chat_id} уже привязан к owner_id={existing['owner_id']}")
         return
 
     code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -323,8 +348,12 @@ async def on_bot_added(event: ChatMemberUpdated):
             ]),
             parse_mode="HTML"
         )
+        logger.info(f"✅ Код {code} отправлен в чат {chat_id}")
     except Exception as e:
-        await log_error(f"Не удалось отправить код в чат {chat_id}: {e}")
+        logger.error(
+            f"❌ Не удалось отправить код в чат {chat_id}: "
+            f"{type(e).__name__}: {e}"
+        )
 
 # --- НАСТРОЙКА ПРАВИЛ (FSM) ---
 @dp.message(RulesStates.waiting_rules)
