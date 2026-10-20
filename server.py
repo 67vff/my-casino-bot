@@ -161,13 +161,13 @@ async def cb_add_channel(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
-# --- КНОПКА «ПРИСЛАТЬ КОД» ---
+# --- КНОПКА «ПРИСЛАТЬ КОД» (ИЩЕТ ПОСЛЕДНИЙ НЕПРИВЯЗАННЫЙ ЧАТ) ---
 @dp.callback_query(F.data == "send_code")
 async def cb_send_code(callback: CallbackQuery):
     await callback.answer()
     chats = load_json(CHATS_FILE, {})
     
-    # Ищем последний непривязанный чат, где бот админ
+    # Ищем последний непривязанный чат
     found = None
     for cid, data in chats.items():
         if data.get("pending_code") and not data.get("owner_id"):
@@ -236,7 +236,7 @@ async def cb_list_channels(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
-# --- МЕНЮ ЧАТА (УДАЛИТЬ / НАСТРОИТЬ ДЕЙСТВИЯ) ---
+# --- МЕНЮ ЧАТА ---
 @dp.callback_query(F.data.startswith("chat_"))
 async def cb_chat_menu(callback: CallbackQuery):
     await callback.answer()
@@ -368,9 +368,8 @@ async def on_bot_added(event: ChatMemberUpdated):
         await bot.send_message(
             chat_id,
             f"👋 <b>Привет! Я бот-модератор.</b>\n\n"
-            f"Чтобы привязать этот чат, скопируй код и отправь мне в личку:\n\n"
-            f"<code>{code}</code>\n\n"
-            f"Или нажми кнопку ниже:",
+            f"Чтобы привязать этот чат, открой меня в личке и нажми «📨 Прислать код».\n\n"
+            f"Или скопируй код: <code>{code}</code>",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔗 Привязать чат", url=f"https://t.me/{me.username}?start={code}")]
             ]),
@@ -394,8 +393,7 @@ async def on_bot_added(event: ChatMemberUpdated):
                 "⚠️ <b>Внимание!</b>\n\n"
                 "Чтобы я мог удалять мат и банить спамеров, выдай мне права администратора:\n"
                 "• Удалять сообщения\n"
-                "• Блокировать участников\n\n"
-                "Без этих прав я не смогу модерировать.",
+                "• Блокировать участников",
                 parse_mode="HTML"
             )
         except:
@@ -426,7 +424,7 @@ async def start_with_code(message: Message, command: CommandObject):
             parse_mode="HTML"
         )
     else:
-        await message.answer("❌ Код не найден или устарел.")
+        await message.answer("❌ Код не найден или устарел. Попробуй «📨 Прислать код».")
 
 # --- ОБРАБОТКА ТЕКСТА ПРАВИЛ ---
 @dp.message(F.text & ~F.text.startswith("/") & (F.chat.type == ChatType.PRIVATE))
