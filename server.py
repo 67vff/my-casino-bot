@@ -145,22 +145,21 @@ async def start(message: Message):
             parse_mode="HTML"
         )
 
-# --- КНОПКА «ДОБАВИТЬ ЧАТ» ---
+# --- КНОПКА «ДОБАВИТЬ ЧАТ» (С ПРАВАМИ АДМИНА) ---
 @dp.callback_query(F.data == "add_channel")
 async def cb_add_channel(callback: CallbackQuery):
     await callback.answer()
     me = await bot.get_me()
+    # Ссылка с правами администратора: удалять сообщения, банить, приглашать
+    admin_url = f"https://t.me/{me.username}?startgroup=true&admin=delete_messages-restrict_members-invite_users"
     await callback.message.answer(
         f"Чтобы добавить чат:\n\n"
-        f"1. Добавь меня в чат (группу) как администратора\n"
-        f"2. Я напишу в чат код\n"
-        f"3. Скопируй код и отправь мне сюда\n\n"
-        f"Или нажми кнопку ниже:",
+        f"1. Нажми кнопку ниже\n"
+        f"2. Выбери группу (чат)\n"
+        f"3. Подтверди добавление с правами администратора\n\n"
+        f"После добавления я напишу в чат код — скопируй его и отправь мне сюда.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="➕ Добавить в чат",
-                url=f"https://t.me/{me.username}?startgroup=true"
-            )]
+            [InlineKeyboardButton(text="➕ Добавить в чат (с правами)", url=admin_url)]
         ])
     )
 
@@ -380,7 +379,6 @@ async def handle_rules(message: Message):
     chat_id = users.get(key)
     
     if not chat_id:
-        # Если не ждём правила — просто игнорируем или отвечаем
         return
     
     chat_data = get_chat(chat_id)
@@ -391,7 +389,6 @@ async def handle_rules(message: Message):
     chat_data["rules"] = message.text
     save_chat(int(chat_id), chat_data)
     
-    # Убираем ожидание
     del users[key]
     save_json(USERS_FILE, users)
     
