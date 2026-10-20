@@ -93,8 +93,13 @@ def set_user(chat_id, user_id, data):
     users[f"{chat_id}_{user_id}"] = data
     save_json(USERS_FILE, users)
 
-# --- GIGACHAT ---
-giga = GigaChat(credentials=GIGACHAT_KEY, verify_ssl_certs=False, scope="GIGACHAT_API_PERS")
+# --- GIGACHAT (С МОДЕЛЬЮ!) ---
+giga = GigaChat(
+    credentials=GIGACHAT_KEY,
+    verify_ssl_certs=False,
+    scope="GIGACHAT_API_PERS",
+    model="GigaChat-2"   # <-- ЯВНО УКАЗАНА МОДЕЛЬ
+)
 
 async def log_error(text):
     if LOG_CHANNEL_ID:
@@ -133,7 +138,6 @@ async def check_message_ai(text, rules):
         return {"action": "none"}
 
 async def ask_ai_for_rules(chat_id, user_text):
-    """ИИ анализирует текст правил, предлагает вариант или переспрашивает."""
     history = get_history(chat_id)
     history.append({"role": "user", "content": user_text})
     
@@ -177,7 +181,6 @@ async def ask_ai_for_rules(chat_id, user_text):
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- ГЛАВНОЕ МЕНЮ ---
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить чат", callback_data="add_channel")],
@@ -194,7 +197,6 @@ async def start(message: Message):
             parse_mode="HTML"
         )
 
-# --- КНОПКА «ДОБАВИТЬ ЧАТ» ---
 @dp.callback_query(F.data == "add_channel")
 async def cb_add_channel(callback: CallbackQuery):
     await callback.answer()
@@ -211,7 +213,6 @@ async def cb_add_channel(callback: CallbackQuery):
         ])
     )
 
-# --- КНОПКА «МОИ ЧАТЫ» ---
 @dp.callback_query(F.data == "list_channels")
 async def cb_list_channels(callback: CallbackQuery):
     await callback.answer()
@@ -238,7 +239,6 @@ async def cb_list_channels(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
-# --- МЕНЮ ЧАТА ---
 @dp.callback_query(F.data.startswith("chat_"))
 async def cb_chat_menu(callback: CallbackQuery):
     await callback.answer()
@@ -260,7 +260,6 @@ async def cb_chat_menu(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
-# --- НАСТРОЙКА ПРАВИЛ (ИИ + 3 КНОПКИ) ---
 @dp.callback_query(F.data.startswith("settings_"))
 async def cb_settings(callback: CallbackQuery):
     await callback.answer()
@@ -281,7 +280,6 @@ async def cb_settings(callback: CallbackQuery):
     users[f"waiting_rules_{callback.from_user.id}"] = chat_id
     save_json(USERS_FILE, users)
 
-# --- БАЗА ЗНАНИЙ ---
 @dp.callback_query(F.data.startswith("knowledge_"))
 async def cb_knowledge(callback: CallbackQuery):
     await callback.answer()
@@ -293,11 +291,10 @@ async def cb_knowledge(callback: CallbackQuery):
     
     rules = chat_data.get("rules", "")
     if not rules:
-        await callback.message.answer("📚 <b>База знаний пуста.</b>\n\nНапиши правила через «✏️ Настроить действия».", parse_mode="HTML")
+        await callback.message.answer("📚 <b>База знаний пуста.</b>", parse_mode="HTML")
     else:
-        await callback.message.answer(f"📚 <b>База знаний чата «{chat_data.get('title', 'Чат')}»:</b>\n\n{rules}", parse_mode="HTML")
+        await callback.message.answer(f"📚 <b>Правила:</b>\n\n{rules}", parse_mode="HTML")
 
-# --- УДАЛИТЬ ЧАТ ---
 @dp.callback_query(F.data.startswith("delete_"))
 async def cb_delete_chat(callback: CallbackQuery):
     await callback.answer()
@@ -310,7 +307,6 @@ async def cb_delete_chat(callback: CallbackQuery):
     delete_chat(chat_id)
     await callback.message.answer(f"🗑️ Чат «{chat_data.get('title', 'Чат')}» удалён.")
 
-# --- ОБРАБОТКА ТЕКСТА ОТ ПОЛЬЗОВАТЕЛЯ (ИИ + 3 КНОПКИ) ---
 @dp.message(F.text & ~F.text.startswith("/") & (F.chat.type == ChatType.PRIVATE))
 async def handle_rules(message: Message):
     users = load_json(USERS_FILE, {})
@@ -325,15 +321,13 @@ async def handle_rules(message: Message):
         await message.answer("Чат не найден.")
         return
     
-    # ИИ анализирует текст
     ai_response = await ask_ai_for_rules(chat_id, message.text)
     
-    # Сохраняем как черновик
     chat_data["draft"] = ai_response
     save_chat(int(chat_id), chat_data)
     
     await message.answer(
-        f"🤖 <b>ИИ предлагает такие правила:</b>\n\n{ai_response}\n\n"
+        f"🤖 <b>ИИ предлагает:</b>\n\n{ai_response}\n\n"
         f"Что сделать?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Сохранить", callback_data=f"save_{chat_id}")],
@@ -343,7 +337,6 @@ async def handle_rules(message: Message):
         parse_mode="HTML"
     )
 
-# --- СОХРАНИТЬ ПРАВИЛА ---
 @dp.callback_query(F.data.startswith("save_"))
 async def cb_save(callback: CallbackQuery):
     await callback.answer()
@@ -358,7 +351,6 @@ async def cb_save(callback: CallbackQuery):
     chat_data.pop("draft", None)
     save_chat(int(chat_id), chat_data)
     
-    # Убираем ожидание
     users = load_json(USERS_FILE, {})
     key = f"waiting_rules_{callback.from_user.id}"
     if key in users:
@@ -367,7 +359,6 @@ async def cb_save(callback: CallbackQuery):
     
     await callback.message.answer(f"✅ Правила для чата «{chat_data.get('title', 'Чат')}» сохранены!")
 
-# --- ОТМЕНИТЬ ---
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cb_cancel(callback: CallbackQuery):
     await callback.answer()
@@ -383,23 +374,18 @@ async def cb_cancel(callback: CallbackQuery):
         del users[key]
         save_json(USERS_FILE, users)
     
-    await callback.message.answer("❌ Отменено. Правила не изменены.")
+    await callback.message.answer("❌ Отменено.")
 
-# --- ДОПИСАТЬ ---
 @dp.callback_query(F.data.startswith("append_"))
 async def cb_append(callback: CallbackQuery):
     await callback.answer()
     chat_id = callback.data.replace("append_", "")
-    await callback.message.answer(
-        "➕ Напиши, что добавить к правилам.",
-        parse_mode="HTML"
-    )
+    await callback.message.answer("➕ Напиши, что добавить к правилам.")
     
     users = load_json(USERS_FILE, {})
     users[f"waiting_rules_{callback.from_user.id}"] = chat_id
     save_json(USERS_FILE, users)
 
-# --- ПРИВЯЗКА ЧАТА (БОТ ДОБАВЛЕН) ---
 @dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> (ADMINISTRATOR | MEMBER)))
 async def on_bot_added(event: ChatMemberUpdated):
     chat_id = event.chat.id
@@ -441,7 +427,6 @@ async def on_bot_added(event: ChatMemberUpdated):
         except:
             pass
 
-# --- ПРИВЯЗКА ПО КНОПКЕ ---
 @dp.callback_query(F.data.startswith("bind_"))
 async def cb_bind_chat(callback: CallbackQuery):
     chat_id = callback.data.replace("bind_", "")
@@ -474,7 +459,6 @@ async def cb_bind_chat(callback: CallbackQuery):
     except:
         pass
 
-# --- ПРИВЕТСТВИЕ / ПРОЩАНИЕ ---
 @dp.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> MEMBER))
 async def on_user_join(event: ChatMemberUpdated):
     chat_id = event.chat.id
@@ -509,7 +493,6 @@ async def on_user_leave(event: ChatMemberUpdated):
     user_data["last_farewell"] = now.isoformat()
     set_user(chat_id, user_id, user_data)
 
-# --- МОДЕРАЦИЯ ---
 async def moderate_message(message: Message):
     chat_id = message.chat.id
     chat_data = get_chat(chat_id)
@@ -566,14 +549,12 @@ async def moderate_message(message: Message):
         except Exception as e:
             await log_error(f"Ban failed: {e}")
 
-# --- МОДЕРАЦИЯ В ГРУППАХ ---
 @dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def moderate_group_message(message: Message):
     if message.text and message.text.startswith("/"):
         return
     await moderate_message(message)
 
-# --- КОМАНДЫ ---
 @dp.message(F.text.lower().in_({"правила", "/правила"}))
 async def cmd_rules(message: Message):
     chat_data = get_chat(message.chat.id)
@@ -582,7 +563,6 @@ async def cmd_rules(message: Message):
     else:
         await message.reply("Правила ещё не настроены.")
 
-# --- ЗАПУСК ---
 async def main():
     logger.info("✅ Бот запущен")
     await dp.start_polling(
