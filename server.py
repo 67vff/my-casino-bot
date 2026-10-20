@@ -132,7 +132,6 @@ def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить чат", callback_data="add_channel")],
         [InlineKeyboardButton(text="📋 Мои чаты", callback_data="list_channels")],
-        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")],
     ])
 
 @dp.message(CommandStart())
@@ -141,30 +140,29 @@ async def start(message: Message):
         await message.answer(
             "👋 <b>Привет! Я бот-модератор.</b>\n\n"
             "Я помогаю следить за порядком в чатах с помощью ИИ.\n\n"
-            "Чтобы начать, добавь меня в свой чат (группу) как администратора.",
+            "Чтобы начать, добавь меня в свой чат (группу).",
             reply_markup=main_menu(),
             parse_mode="HTML"
         )
 
-# --- ОБРАБОТЧИКИ КНОПОК ---
+# --- КНОПКА «ДОБАВИТЬ ЧАТ» (С ПРАВАМИ) ---
 @dp.callback_query(F.data == "add_channel")
 async def cb_add_channel(callback: CallbackQuery):
     await callback.answer()
     me = await bot.get_me()
+    admin_url = f"https://t.me/{me.username}?startgroup=true&admin=delete_messages+restrict_members+invite_users"
     await callback.message.answer(
         f"Чтобы добавить чат:\n\n"
-        f"1. Добавь меня в чат (группу) как администратора\n"
-        f"2. Я напишу в чат код\n"
-        f"3. Скопируй код и отправь мне сюда\n\n"
-        f"Или нажми кнопку ниже:",
+        f"1. Нажми кнопку ниже\n"
+        f"2. Выбери группу (чат)\n"
+        f"3. Подтверди добавление с правами администратора\n\n"
+        f"После добавления я напишу в чат код — скопируй его и отправь мне сюда.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="➕ Добавить в чат",
-                url=f"https://t.me/{me.username}?startgroup=true"
-            )]
+            [InlineKeyboardButton(text="➕ Добавить в чат (с правами)", url=admin_url)]
         ])
     )
 
+# --- КНОПКА «МОИ ЧАТЫ» ---
 @dp.callback_query(F.data == "list_channels")
 async def cb_list_channels(callback: CallbackQuery):
     await callback.answer()
@@ -178,70 +176,199 @@ async def cb_list_channels(callback: CallbackQuery):
         await callback.message.answer("У тебя пока нет привязанных чатов.")
         return
     
-    text = "📋 <b>Твои чаты:</b>\n\n"
+    buttons = []
     for cid, data in my_chats:
         sub_until = data.get("sub_until", "")
+        status = ""
         if sub_until:
             try:
                 dt = datetime.fromisoformat(sub_until)
                 days_left = (dt - datetime.utcnow()).days
                 if days_left > 0:
-                    status = f"✅ активна ({days_left} дн.)"
+                    status = f" ✅ {days_left}д"
                 else:
-                    status = "❌ истекла"
+                    status = " ❌"
             except:
-                status = "❓"
-        else:
-            status = "❓"
-        text += f"• <b>{data.get('title', 'Без названия')}</b>\n"
-        text += f"  ID: <code>{cid}</code>\n"
-        text += f"  Подписка: {status}\n\n"
+                pass
+        buttons.append([InlineKeyboardButton(
+            text=f"📋 {data.get('title', 'Чат')}{status}",
+            callback_data=f"chat_{cid}"
+        )])
     
-    await callback.message.answer(text, parse_mode="HTML")
-
-@dp.callback_query(F.data == "settings")
-async def cb_settings(callback: CallbackQuery):
-    await callback.answer()
     await callback.message.answer(
-        "⚙️ <b>Настройки</b>\n\n"
-        "Чтобы изменить правила, просто напиши мне текст правил для чата.\n\n"
-        "Команды:\n"
-        "/activate &lt;chat_id&gt; &lt;дней&gt; — продлить подписку (только владелец бота)",
+        "📋 <b>Твои чаты:</b>\n\nВыбери чат:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode="HTML"
     )
 
-# --- ПРИВЯЗКА ЧАТА (БОТ ДОБАВЛЕН В ГРУППУ) ---
-@dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> ADMINISTRATOR))
-async def on_bot_added(event: ChatMemberUpdated):
-    chat_id = event.chat.id
-    chat_title = event.chat.title or "Без названия"
+# --- МЕНЮ ЧАТА ---
+@dp.callback_query(F.data.startswith("chat_"))
+async def cb_chat_menu(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("chat_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data:
+        await callback.message.answer("Чат не найден.")
+        return
     
-    code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    if chat_data.get("owner_id") != callback.from_user.id:
+        await callback.message.answer("Это не твой чат.")
+        return
     
-    save_chat(chat_id, {
-        "title": chat_title,
-        "owner_id": None,
-        "rules": "",
-        "sub_until": (datetime.utcnow() + timedelta(days=3)).isoformat(),
-        "pending_code": code,
-        "custom_commands": {},
-        "greeting": "👋 Привет, {name}! Добро пожаловать.",
-        "farewell": "👋 Пока, {name}.",
-        "warn_limit": 3
-    })
+    sub_until = chat_data.get("sub_until", "")
+    status = "❓"
+    if sub_until:
+        try:
+            dt = datetime.fromisoformat(sub_until)
+            days_left = (dt - datetime.utcnow()).days
+            if days_left > 0:
+                status = f"✅ активна ({days_left} дн.)"
+            else:
+                status = "❌ истекла"
+        except:
+            pass
     
-    me = await bot.get_me()
-    await bot.send_message(
-        chat_id,
-        f"👋 <b>Привет! Я бот-модератор.</b>\n\n"
-        f"Чтобы привязать этот чат, скопируй код и отправь мне в личку:\n\n"
-        f"<code>{code}</code>\n\n"
-        f"Или нажми кнопку ниже:",
+    text = (
+        f"📋 <b>{chat_data.get('title', 'Чат')}</b>\n\n"
+        f"ID: <code>{chat_id}</code>\n"
+        f"Подписка: {status}\n\n"
+        f"Что хочешь сделать?"
+    )
+    
+    await callback.message.answer(
+        text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Привязать чат", url=f"https://t.me/{me.username}?start={code}")]
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data=f"settings_{chat_id}")],
+            [InlineKeyboardButton(text="📚 База знаний", callback_data=f"knowledge_{chat_id}")],
+            [InlineKeyboardButton(text="🗑️ Удалить чат", callback_data=f"delete_{chat_id}")],
         ]),
         parse_mode="HTML"
     )
+
+# --- НАСТРОЙКИ ---
+@dp.callback_query(F.data.startswith("settings_"))
+async def cb_settings(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("settings_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data or chat_data.get("owner_id") != callback.from_user.id:
+        await callback.message.answer("Это не твой чат.")
+        return
+    
+    await callback.message.answer(
+        f"⚙️ <b>Настройки чата «{chat_data.get('title', 'Чат')}»</b>\n\n"
+        f"Напиши текст правил для этого чата. Например:\n"
+        f"<i>«Запрещён мат, спам и реклама. За мат — предупреждение, за спам — бан»</i>",
+        parse_mode="HTML"
+    )
+    
+    users = load_json(USERS_FILE, {})
+    key = f"waiting_rules_{callback.from_user.id}"
+    users[key] = chat_id
+    save_json(USERS_FILE, users)
+
+# --- БАЗА ЗНАНИЙ ---
+@dp.callback_query(F.data.startswith("knowledge_"))
+async def cb_knowledge(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("knowledge_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data or chat_data.get("owner_id") != callback.from_user.id:
+        await callback.message.answer("Это не твой чат.")
+        return
+    
+    rules = chat_data.get("rules", "")
+    if not rules:
+        await callback.message.answer(
+            "📚 <b>База знаний пуста.</b>\n\n"
+            "Напиши правила через «⚙️ Настройки».",
+            parse_mode="HTML"
+        )
+    else:
+        await callback.message.answer(
+            f"📚 <b>База знаний чата «{chat_data.get('title', 'Чат')}»:</b>\n\n{rules}",
+            parse_mode="HTML"
+        )
+
+# --- УДАЛИТЬ ЧАТ ---
+@dp.callback_query(F.data.startswith("delete_"))
+async def cb_delete_chat(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("delete_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data or chat_data.get("owner_id") != callback.from_user.id:
+        await callback.message.answer("Это не твой чат.")
+        return
+    
+    chats = load_json(CHATS_FILE, {})
+    if chat_id in chats:
+        del chats[chat_id]
+        save_json(CHATS_FILE, chats)
+    
+    await callback.message.answer(
+        f"🗑️ Чат «{chat_data.get('title', 'Чат')}» удалён из списка."
+    )
+
+# --- ЕДИНЫЙ ОБРАБОТЧИК ДОБАВЛЕНИЯ БОТА (И АДМИН, И УЧАСТНИК) ---
+@dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> (ADMINISTRATOR | MEMBER)))
+async def on_bot_added(event: ChatMemberUpdated):
+    chat_id = event.chat.id
+    chat_title = event.chat.title or "Без названия"
+    member = event.new_chat_member
+    
+    has_rights = False
+    if member.status == "administrator":
+        has_rights = member.can_delete_messages and member.can_restrict_members
+    
+    if has_rights:
+        code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        save_chat(chat_id, {
+            "title": chat_title,
+            "owner_id": None,
+            "rules": "",
+            "sub_until": (datetime.utcnow() + timedelta(days=3)).isoformat(),
+            "pending_code": code,
+            "custom_commands": {},
+            "greeting": "👋 Привет, {name}! Добро пожаловать.",
+            "farewell": "👋 Пока, {name}.",
+            "warn_limit": 3
+        })
+        me = await bot.get_me()
+        await bot.send_message(
+            chat_id,
+            f"👋 <b>Привет! Я бот-модератор.</b>\n\n"
+            f"Чтобы привязать этот чат, скопируй код и отправь мне в личку:\n\n"
+            f"<code>{code}</code>\n\n"
+            f"Или нажми кнопку ниже:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔗 Привязать чат", url=f"https://t.me/{me.username}?start={code}")]
+            ]),
+            parse_mode="HTML"
+        )
+    else:
+        save_chat(chat_id, {
+            "title": chat_title,
+            "owner_id": None,
+            "rules": "",
+            "sub_until": (datetime.utcnow() + timedelta(days=3)).isoformat(),
+            "pending_code": None,
+            "custom_commands": {},
+            "greeting": "👋 Привет, {name}! Добро пожаловать.",
+            "farewell": "👋 Пока, {name}.",
+            "warn_limit": 3
+        })
+        try:
+            await bot.send_message(
+                chat_id,
+                "⚠️ <b>Внимание!</b>\n\n"
+                "Чтобы я мог удалять мат и банить спамеров, выдай мне права администратора:\n"
+                "• Удалять сообщения\n"
+                "• Блокировать участников\n\n"
+                "Без этих прав я не смогу модерировать. Выдай права и я пришлю код для привязки.",
+                parse_mode="HTML"
+            )
+        except:
+            pass
 
 # --- ПРИВЯЗКА ПО КОДУ ---
 @dp.message(CommandStart(deep_link=True))
@@ -270,28 +397,32 @@ async def start_with_code(message: Message, command: CommandObject):
     else:
         await message.answer("❌ Код не найден или устарел.")
 
-# --- НАСТРОЙКА ПРАВИЛ ---
-@dp.message(F.text & ~F.text.startswith("/"))
+# --- ОБРАБОТКА ПРАВИЛ ИЗ ЛИЧКИ ---
+@dp.message(F.text & ~F.text.startswith("/") & (F.chat.type == ChatType.PRIVATE))
 async def handle_rules(message: Message):
-    if message.chat.type != ChatType.PRIVATE:
+    users = load_json(USERS_FILE, {})
+    key = f"waiting_rules_{message.from_user.id}"
+    chat_id = users.get(key)
+    
+    if not chat_id:
         return
     
-    chats = load_json(CHATS_FILE, {})
-    target_chat_id = None
-    for cid, data in chats.items():
-        if data.get("owner_id") == message.from_user.id:
-            target_chat_id = cid
-            break
-    
-    if not target_chat_id:
-        await message.answer("Сначала привяжи чат через /start.")
+    chat_data = get_chat(chat_id)
+    if not chat_data:
+        await message.answer("Чат не найден.")
         return
     
-    data = chats[target_chat_id]
-    data["rules"] = message.text
-    save_chat(int(target_chat_id), data)
+    chat_data["rules"] = message.text
+    save_chat(int(chat_id), chat_data)
     
-    await message.answer("✅ Правила сохранены! Теперь я буду модерировать чат по этим правилам.")
+    del users[key]
+    save_json(USERS_FILE, users)
+    
+    await message.answer(
+        f"✅ Правила для чата «{chat_data.get('title', 'Чат')}» сохранены!\n\n"
+        f"Теперь я буду модерировать по этим правилам.",
+        parse_mode="HTML"
+    )
 
 # --- ПРИВЕТСТВИЕ / ПРОЩАНИЕ ---
 @dp.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> MEMBER))
@@ -385,14 +516,14 @@ async def moderate_message(message: Message):
         except Exception as e:
             await log_error(f"Ban failed: {e}")
 
-# --- МОДЕРАЦИЯ В ГРУППАХ (ЧАТАХ) ---
+# --- МОДЕРАЦИЯ В ГРУППАХ ---
 @dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def moderate_group_message(message: Message):
     if message.text and message.text.startswith("/"):
         return
     await moderate_message(message)
 
-# --- КОМАНДЫ ---
+# --- КОМАНДЫ В ЧАТЕ ---
 @dp.message(F.text.lower().in_({"правила", "/правила"}))
 async def cmd_rules(message: Message):
     chat_data = get_chat(message.chat.id)
