@@ -4,7 +4,7 @@ import json
 import random
 import string
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import (
@@ -93,12 +93,12 @@ def set_user(chat_id, user_id, data):
     users[f"{chat_id}_{user_id}"] = data
     save_json(USERS_FILE, users)
 
-# --- GIGACHAT (С МОДЕЛЬЮ!) ---
+# --- GIGACHAT ---
 giga = GigaChat(
     credentials=GIGACHAT_KEY,
     verify_ssl_certs=False,
     scope="GIGACHAT_API_PERS",
-    model="GigaChat-2"   # <-- ЯВНО УКАЗАНА МОДЕЛЬ
+    model="GigaChat-2"
 )
 
 async def log_error(text):
@@ -562,6 +562,71 @@ async def cmd_rules(message: Message):
         await message.reply(f"📜 <b>Правила:</b>\n\n{chat_data['rules']}", parse_mode="HTML")
     else:
         await message.reply("Правила ещё не настроены.")
+
+# --- ИСПРАВЛЕННЫЙ МУТ ---
+@dp.message(Command("mute"))
+async def cmd_mute(message: Message):
+    if message.chat.type not in ("group", "supergroup"):
+        await message.reply("Мут работает только в группах и супергруппах.")
+        return
+    
+    if not message.reply_to_message:
+        await message.reply("Ответь на сообщение пользователя.")
+        return
+    
+    user_id = message.reply_to_message.from_user.id
+    args = message.text.split()
+    minutes = 60
+    if len(args) > 1:
+        try:
+            minutes = int(args[1])
+        except:
+            pass
+    
+    try:
+        await bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=user_id,
+            permissions=types.ChatPermissions(can_send_messages=False),
+            until_date=timedelta(minutes=minutes)
+        )
+        await message.reply(f"🔇 @{message.reply_to_message.from_user.username} замучен на {minutes} минут.")
+    except Exception as e:
+        await message.reply(f"Ошибка: {e}")
+
+@dp.message(Command("unmute"))
+async def cmd_unmute(message: Message):
+    if not message.reply_to_message:
+        await message.reply("Ответь на сообщение пользователя.")
+        return
+    
+    user_id = message.reply_to_message.from_user.id
+    try:
+        await bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=user_id,
+            permissions=types.ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True
+            )
+        )
+        await message.reply(f"🔊 @{message.reply_to_message.from_user.username} размучен.")
+    except Exception as e:
+        await message.reply(f"Ошибка: {e}")
+
+@dp.message(Command("ban"))
+async def cmd_ban(message: Message):
+    if not message.reply_to_message:
+        await message.reply("Ответь на сообщение пользователя.")
+        return
+    user_id = message.reply_to_message.from_user.id
+    try:
+        await bot.ban_chat_member(message.chat.id, user_id)
+        await message.reply(f"🚫 @{message.reply_to_message.from_user.username} забанен.")
+    except Exception as e:
+        await message.reply(f"Ошибка: {e}")
 
 async def main():
     logger.info("✅ Бот запущен")
