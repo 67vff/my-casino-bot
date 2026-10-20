@@ -30,6 +30,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 CHATS_FILE = os.path.join(DATA_DIR, "chats.json")
 WARNS_FILE = os.path.join(DATA_DIR, "warns.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
+HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,6 +63,15 @@ def delete_chat(chat_id):
     if str(chat_id) in chats:
         del chats[str(chat_id)]
         save_json(CHATS_FILE, chats)
+
+def get_history(chat_id):
+    h = load_json(HISTORY_FILE, {})
+    return h.get(str(chat_id), [])
+
+def save_history(chat_id, hist):
+    h = load_json(HISTORY_FILE, {})
+    h[str(chat_id)] = hist[-20:]
+    save_json(HISTORY_FILE, h)
 
 def get_warns(chat_id, user_id):
     warns = load_json(WARNS_FILE, {})
@@ -98,11 +108,11 @@ async def check_message_ai(text, rules):
         prompt = f"""Ты — модератор Telegram-чата. Правила чата:
 {rules}
 
-Проанализируй сообщение. Ответь ТОЛЬКО JSON (без пояснений):
-{{"action": "none"}} — всё чисто
-{{"action": "warn", "reason": "причина"}} — предупреждение
-{{"action": "delete", "reason": "причина"}} — удалить
-{{"action": "ban", "reason": "причина"}} — забанить
+Проанализируй сообщение. Ответь ТОЛЬКО JSON:
+{{"action": "none"}}
+{{"action": "warn", "reason": "причина"}}
+{{"action": "delete", "reason": "причина"}}
+{{"action": "ban", "reason": "причина"}}
 
 Сообщение: "{text}"
 """
@@ -122,6 +132,47 @@ async def check_message_ai(text, rules):
         await log_error(f"GigaChat: {e}")
         return {"action": "none"}
 
+async def ask_ai_for_rules(chat_id, user_text):
+    """ИИ анализирует текст правил, предлагает вариант или переспрашивает."""
+    history = get_history(chat_id)
+    history.append({"role": "user", "content": user_text})
+    
+    chat_data = get_chat(chat_id)
+    current_rules = chat_data.get("rules", "") if chat_data else ""
+    
+    system_prompt = f"""Ты — помощник по настройке правил модерации для Telegram-чата.
+
+Текущие правила:
+{current_rules if current_rules else "(пусто)"}
+
+Твоя задача:
+1. Понять, что пользователь хочет изменить/добавить в правилах.
+2. Если непонятно — переспроси.
+3. Если понятно — сформулируй новые правила красиво и предложи их.
+
+Отвечай кратко и по делу."""
+    
+    messages = [Messages(role=MessagesRole.SYSTEM, content=system_prompt)]
+    for h in history[-10:]:
+        role = MessagesRole.USER if h["role"] == "user" else MessagesRole.ASSISTANT
+        messages.append(Messages(role=role, content=h["content"]))
+    
+    try:
+        response = giga.chat(Chat(messages=messages))
+        content = ""
+        if hasattr(response, "choices") and response.choices:
+            content = response.choices[0].message.content
+        elif hasattr(response, "messages") and response.messages:
+            content = response.messages[0].content
+        content = content.strip()
+        
+        history.append({"role": "assistant", "content": content})
+        save_history(chat_id, history)
+        return content
+    except Exception as e:
+        await log_error(f"AI rules: {e}")
+        return "Не могу обработать. Попробуй ещё раз."
+
 # --- BOT ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -138,8 +189,7 @@ async def start(message: Message):
     if message.chat.type == ChatType.PRIVATE:
         await message.answer(
             "👋 <b>Привет! Я бот-модератор.</b>\n\n"
-            "Я помогаю следить за порядком в чатах с помощью ИИ.\n\n"
-            "Добавь меня в свой чат (группу) — я напишу туда кнопку для привязки.",
+            "Добавь меня в чат (группу) — я напишу туда кнопку для привязки.",
             reply_markup=main_menu(),
             parse_mode="HTML"
         )
@@ -204,12 +254,13 @@ async def cb_chat_menu(callback: CallbackQuery):
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✏️ Настроить действия", callback_data=f"settings_{chat_id}")],
+            [InlineKeyboardButton(text="📚 База знаний", callback_data=f"knowledge_{chat_id}")],
             [InlineKeyboardButton(text="🗑️ Удалить чат", callback_data=f"delete_{chat_id}")],
         ]),
         parse_mode="HTML"
     )
 
-# --- НАСТРОЙКА ПРАВИЛ ---
+# --- НАСТРОЙКА ПРАВИЛ (ИИ + 3 КНОПКИ) ---
 @dp.callback_query(F.data.startswith("settings_"))
 async def cb_settings(callback: CallbackQuery):
     await callback.answer()
@@ -221,13 +272,30 @@ async def cb_settings(callback: CallbackQuery):
     
     await callback.message.answer(
         f"✏️ <b>Настройка чата «{chat_data.get('title', 'Чат')}»</b>\n\n"
-        f"Напиши текст правил для этого чата.",
+        f"Напиши, что нужно настроить (например: «Запрещён мат, спам и реклама»).\n"
+        f"ИИ предложит вариант, а ты сможешь сохранить или отменить.",
         parse_mode="HTML"
     )
     
     users = load_json(USERS_FILE, {})
     users[f"waiting_rules_{callback.from_user.id}"] = chat_id
     save_json(USERS_FILE, users)
+
+# --- БАЗА ЗНАНИЙ ---
+@dp.callback_query(F.data.startswith("knowledge_"))
+async def cb_knowledge(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("knowledge_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data or chat_data.get("owner_id") != callback.from_user.id:
+        await callback.message.answer("Это не твой чат.")
+        return
+    
+    rules = chat_data.get("rules", "")
+    if not rules:
+        await callback.message.answer("📚 <b>База знаний пуста.</b>\n\nНапиши правила через «✏️ Настроить действия».", parse_mode="HTML")
+    else:
+        await callback.message.answer(f"📚 <b>База знаний чата «{chat_data.get('title', 'Чат')}»:</b>\n\n{rules}", parse_mode="HTML")
 
 # --- УДАЛИТЬ ЧАТ ---
 @dp.callback_query(F.data.startswith("delete_"))
@@ -242,40 +310,94 @@ async def cb_delete_chat(callback: CallbackQuery):
     delete_chat(chat_id)
     await callback.message.answer(f"🗑️ Чат «{chat_data.get('title', 'Чат')}» удалён.")
 
-# --- ПРИВЯЗКА ЧАТА ПО КНОПКЕ В ЧАТЕ ---
-@dp.callback_query(F.data.startswith("bind_"))
-async def cb_bind_chat(callback: CallbackQuery):
-    chat_id = callback.data.replace("bind_", "")
+# --- ОБРАБОТКА ТЕКСТА ОТ ПОЛЬЗОВАТЕЛЯ (ИИ + 3 КНОПКИ) ---
+@dp.message(F.text & ~F.text.startswith("/") & (F.chat.type == ChatType.PRIVATE))
+async def handle_rules(message: Message):
+    users = load_json(USERS_FILE, {})
+    key = f"waiting_rules_{message.from_user.id}"
+    chat_id = users.get(key)
+    
+    if not chat_id:
+        return
+    
     chat_data = get_chat(chat_id)
     if not chat_data:
-        await callback.answer("Чат не найден.", show_alert=True)
+        await message.answer("Чат не найден.")
         return
     
-    if chat_data.get("owner_id"):
-        await callback.answer("Этот чат уже привязан.", show_alert=True)
-        return
+    # ИИ анализирует текст
+    ai_response = await ask_ai_for_rules(chat_id, message.text)
     
-    # Привязываем
-    chat_data["owner_id"] = callback.from_user.id
+    # Сохраняем как черновик
+    chat_data["draft"] = ai_response
     save_chat(int(chat_id), chat_data)
     
-    await callback.answer("✅ Чат привязан!", show_alert=True)
-    await callback.message.edit_text(
-        f"✅ <b>Чат «{chat_data.get('title', 'Чат')}» привязан!</b>\n\n"
-        f"Теперь напиши мне правила модерации в личку.",
+    await message.answer(
+        f"🤖 <b>ИИ предлагает такие правила:</b>\n\n{ai_response}\n\n"
+        f"Что сделать?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Сохранить", callback_data=f"save_{chat_id}")],
+            [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{chat_id}")],
+            [InlineKeyboardButton(text="➕ Дописать", callback_data=f"append_{chat_id}")],
+        ]),
+        parse_mode="HTML"
+    )
+
+# --- СОХРАНИТЬ ПРАВИЛА ---
+@dp.callback_query(F.data.startswith("save_"))
+async def cb_save(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("save_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data:
+        await callback.message.answer("Чат не найден.")
+        return
+    
+    draft = chat_data.get("draft", "")
+    chat_data["rules"] = draft
+    chat_data.pop("draft", None)
+    save_chat(int(chat_id), chat_data)
+    
+    # Убираем ожидание
+    users = load_json(USERS_FILE, {})
+    key = f"waiting_rules_{callback.from_user.id}"
+    if key in users:
+        del users[key]
+        save_json(USERS_FILE, users)
+    
+    await callback.message.answer(f"✅ Правила для чата «{chat_data.get('title', 'Чат')}» сохранены!")
+
+# --- ОТМЕНИТЬ ---
+@dp.callback_query(F.data.startswith("cancel_"))
+async def cb_cancel(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("cancel_", "")
+    chat_data = get_chat(chat_id)
+    if chat_data:
+        chat_data.pop("draft", None)
+        save_chat(int(chat_id), chat_data)
+    
+    users = load_json(USERS_FILE, {})
+    key = f"waiting_rules_{callback.from_user.id}"
+    if key in users:
+        del users[key]
+        save_json(USERS_FILE, users)
+    
+    await callback.message.answer("❌ Отменено. Правила не изменены.")
+
+# --- ДОПИСАТЬ ---
+@dp.callback_query(F.data.startswith("append_"))
+async def cb_append(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("append_", "")
+    await callback.message.answer(
+        "➕ Напиши, что добавить к правилам.",
         parse_mode="HTML"
     )
     
-    # Пишем в личку владельцу
-    try:
-        await bot.send_message(
-            callback.from_user.id,
-            f"✅ <b>Чат «{chat_data.get('title', 'Чат')}» привязан!</b>\n\n"
-            f"Теперь напиши мне правила модерации для этого чата.",
-            parse_mode="HTML"
-        )
-    except:
-        pass
+    users = load_json(USERS_FILE, {})
+    users[f"waiting_rules_{callback.from_user.id}"] = chat_id
+    save_json(USERS_FILE, users)
 
 # --- ПРИВЯЗКА ЧАТА (БОТ ДОБАВЛЕН) ---
 @dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> (ADMINISTRATOR | MEMBER)))
@@ -313,36 +435,44 @@ async def on_bot_added(event: ChatMemberUpdated):
         try:
             await bot.send_message(
                 chat_id,
-                "⚠️ <b>Дай мне права администратора:</b>\n"
-                "• Удалять сообщения\n"
-                "• Блокировать участников",
+                "⚠️ <b>Дай мне права администратора:</b>\n• Удалять сообщения\n• Блокировать участников",
                 parse_mode="HTML"
             )
         except:
             pass
 
-# --- ОБРАБОТКА ТЕКСТА ПРАВИЛ ---
-@dp.message(F.text & ~F.text.startswith("/") & (F.chat.type == ChatType.PRIVATE))
-async def handle_rules(message: Message):
-    users = load_json(USERS_FILE, {})
-    key = f"waiting_rules_{message.from_user.id}"
-    chat_id = users.get(key)
-    
-    if not chat_id:
-        return
-    
+# --- ПРИВЯЗКА ПО КНОПКЕ ---
+@dp.callback_query(F.data.startswith("bind_"))
+async def cb_bind_chat(callback: CallbackQuery):
+    chat_id = callback.data.replace("bind_", "")
     chat_data = get_chat(chat_id)
     if not chat_data:
-        await message.answer("Чат не найден.")
+        await callback.answer("Чат не найден.", show_alert=True)
         return
     
-    chat_data["rules"] = message.text
+    if chat_data.get("owner_id"):
+        await callback.answer("Этот чат уже привязан.", show_alert=True)
+        return
+    
+    chat_data["owner_id"] = callback.from_user.id
     save_chat(int(chat_id), chat_data)
     
-    del users[key]
-    save_json(USERS_FILE, users)
+    await callback.answer("✅ Чат привязан!", show_alert=True)
+    await callback.message.edit_text(
+        f"✅ <b>Чат «{chat_data.get('title', 'Чат')}» привязан!</b>\n\n"
+        f"Теперь напиши мне правила модерации в личку.",
+        parse_mode="HTML"
+    )
     
-    await message.answer(f"✅ Правила для чата «{chat_data.get('title', 'Чат')}» сохранены!")
+    try:
+        await bot.send_message(
+            callback.from_user.id,
+            f"✅ <b>Чат «{chat_data.get('title', 'Чат')}» привязан!</b>\n\n"
+            f"Теперь напиши мне правила модерации для этого чата.",
+            parse_mode="HTML"
+        )
+    except:
+        pass
 
 # --- ПРИВЕТСТВИЕ / ПРОЩАНИЕ ---
 @dp.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> MEMBER))
