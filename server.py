@@ -264,14 +264,13 @@ async def on_user_leave(event: ChatMemberUpdated):
     user_data["last_farewell"] = now.isoformat()
     set_user(chat_id, user_id, user_data)
 
-# --- ФУНКЦИЯ МОДЕРАЦИИ (ОБЩАЯ ДЛЯ КАНАЛА И ГРУППЫ) ---
+# --- ФУНКЦИЯ МОДЕРАЦИИ ---
 async def moderate_message(message: Message):
     chat_id = message.chat.id
     chat_data = get_chat(chat_id)
     if not chat_data:
         return
 
-    # Пропускаем владельца бота и админов
     if message.from_user:
         if message.from_user.id == OWNER_ID:
             return
@@ -282,7 +281,6 @@ async def moderate_message(message: Message):
         except:
             pass
 
-    # Проверка подписки (для OWNER_ID — бесплатно)
     sub_until = chat_data.get("sub_until")
     if sub_until and datetime.fromisoformat(sub_until) < datetime.utcnow():
         await log_error(f"Подписка истекла: {chat_data.get('title')} ({chat_id})")
@@ -323,20 +321,83 @@ async def moderate_message(message: Message):
         except Exception as e:
             await log_error(f"Ban failed: {e}")
 
-# --- МОДЕРАЦИЯ В КАНАЛЕ (ПОСТЫ) ---
+# --- МОДЕРАЦИЯ В КАНАЛЕ ---
 @dp.channel_post()
 async def moderate_channel_post(message: Message):
     await moderate_message(message)
 
-# --- МОДЕРАЦИЯ В ГРУППАХ / КОММЕНТАРИЯХ ---
+# --- МОДЕРАЦИЯ В ГРУППАХ ---
 @dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def moderate_group_message(message: Message):
-    # Пропускаем команды — их обрабатывают отдельные хендлеры
     if message.text and message.text.startswith("/"):
         return
     await moderate_message(message)
 
-# --- КОМАНДЫ В ЧАТЕ (БЕЗ СЛЭША И С НИМ) ---
+# --- ОБРАБОТЧИКИ КНОПОК ---
+@dp.callback_query(F.data == "add_channel")
+async def cb_add_channel(callback: types.CallbackQuery):
+    await callback.answer()
+    me = await bot.get_me()
+    await callback.message.answer(
+        f"Чтобы добавить канал:\n\n"
+        f"1. Добавь меня в канал как администратора\n"
+        f"2. Я напишу в канал код\n"
+        f"3. Скопируй код и отправь мне сюда\n\n"
+        f"Или нажми кнопку ниже:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="➕ Добавить в канал",
+                url=f"https://t.me/{me.username}?startchannel=true"
+            )]
+        ])
+    )
+
+@dp.callback_query(F.data == "list_channels")
+async def cb_list_channels(callback: types.CallbackQuery):
+    await callback.answer()
+    chats = load_json(CHATS_FILE, {})
+    my_chats = []
+    for cid, data in chats.items():
+        if data.get("owner_id") == callback.from_user.id:
+            my_chats.append((cid, data))
+    
+    if not my_chats:
+        await callback.message.answer("У тебя пока нет привязанных каналов.")
+        return
+    
+    text = "📋 <b>Твои каналы:</b>\n\n"
+    for cid, data in my_chats:
+        sub_until = data.get("sub_until", "")
+        if sub_until:
+            try:
+                dt = datetime.fromisoformat(sub_until)
+                days_left = (dt - datetime.utcnow()).days
+                if days_left > 0:
+                    status = f"✅ активна ({days_left} дн.)"
+                else:
+                    status = "❌ истекла"
+            except:
+                status = "❓"
+        else:
+            status = "❓"
+        text += f"• <b>{data.get('title', 'Без названия')}</b>\n"
+        text += f"  ID: <code>{cid}</code>\n"
+        text += f"  Подписка: {status}\n\n"
+    
+    await callback.message.answer(text, parse_mode="HTML")
+
+@dp.callback_query(F.data == "settings")
+async def cb_settings(callback: types.CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "⚙️ <b>Настройки</b>\n\n"
+        "Чтобы изменить правила, просто напиши мне текст правил для канала.\n\n"
+        "Команды:\n"
+        "/activate &lt;chat_id&gt; &lt;дней&gt; — продлить подписку (только владелец бота)",
+        parse_mode="HTML"
+    )
+
+# --- КОМАНДЫ В ЧАТЕ ---
 @dp.message(F.text.lower().in_({"правила", "/правила"}))
 async def cmd_rules(message: Message):
     chat_data = get_chat(message.chat.id)
@@ -393,7 +454,7 @@ async def cmd_ban(message: Message):
     except Exception as e:
         await message.reply(f"Ошибка: {e}")
 
-# --- ПОДПИСКА (РУЧНАЯ) ---
+# --- ПОДПИСКА ---
 @dp.message(Command("activate"))
 async def cmd_activate(message: Message):
     if message.from_user.id != OWNER_ID:
