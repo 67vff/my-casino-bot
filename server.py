@@ -4,7 +4,7 @@ import json
 import random
 import string
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import (
@@ -16,15 +16,24 @@ from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated
 )
 from aiogram.enums import ChatType
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from gigachat import GigaChat
 from gigachat.models import Chat, Messages, MessagesRole
 
 # --- НАСТРОЙКИ ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GIGACHAT_KEY = os.getenv("GIGACHAT_KEY")
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0") or "0")
+OWNER_ID = int(os.getenv("OWNER_ID", "0") or "0")
 DATA_DIR = os.getenv("DATA_DIR", "./data")
+
+if not BOT_TOKEN:
+    raise SystemExit("❌ Не задан BOT_TOKEN")
+if not GIGACHAT_KEY:
+    raise SystemExit("❌ Не задан GIGACHAT_KEY")
+
 os.makedirs(DATA_DIR, exist_ok=True)
 
 CHATS_FILE = os.path.join(DATA_DIR, "chats.json")
@@ -34,13 +43,16 @@ USERS_FILE = os.path.join(DATA_DIR, "users.json")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
 # --- БАЗА ---
 def load_json(f, default=None):
     if os.path.exists(f):
         try:
             with open(f, "r", encoding="utf-8") as fp:
                 return json.load(fp)
-        except:
+        except Exception:
             return default if default is not None else {}
     return default if default is not None else {}
 
@@ -87,12 +99,31 @@ def set_user(chat_id, user_id, data):
 # --- GIGACHAT ---
 giga = GigaChat(credentials=GIGACHAT_KEY, verify_ssl_certs=False, scope="GIGACHAT_API_PERS")
 
+# --- BOT ---
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
+
+# --- FSM ---
+class RulesStates(StatesGroup):
+    waiting_rules = State()
+
+# --- ХЕЛПЕРЫ ---
 async def log_error(text):
+    logger.error(text)
     if LOG_CHANNEL_ID:
         try:
             await bot.send_message(LOG_CHANNEL_ID, f"⚠️ <b>ОШИБКА</b>\n\n{text}", parse_mode="HTML")
-        except:
+        except Exception:
             pass
+
+async def is_admin(chat_id: int, user_id: int) -> bool:
+    if user_id == OWNER_ID:
+        return True
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
 
 async def check_message_ai(text, rules):
     try:
@@ -107,13 +138,17 @@ async def check_message_ai(text, rules):
 
 Сообщение: "{text}"
 """
-        response = giga.chat(Chat(messages=[Messages(role=MessagesRole.USER, content=prompt)]))
+        # ВАЖНО: giga.chat синхронный — выносим в поток, чтобы не блокировать event loop
+        response = await asyncio.to_thread(
+            giga.chat,
+            Chat(messages=[Messages(role=MessagesRole.USER, content=prompt)])
+        )
         content = ""
         if hasattr(response, "choices") and response.choices:
             content = response.choices[0].message.content
         elif hasattr(response, "messages") and response.messages:
             content = response.messages[0].content
-        content = content.strip()
+        content = (content or "").strip()
         start = content.find("{")
         end = content.rfind("}") + 1
         if start >= 0 and end > start:
@@ -122,10 +157,6 @@ async def check_message_ai(text, rules):
     except Exception as e:
         await log_error(f"GigaChat: {e}")
         return {"action": "none"}
-
-# --- BOT ---
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
 
 # --- ГЛАВНОЕ МЕНЮ ---
 def main_menu():
@@ -136,100 +167,115 @@ def main_menu():
     ])
 
 @dp.message(CommandStart())
-async def start(message: Message):
-    if message.chat.type == ChatType.PRIVATE:
-        await message.answer(
-            "👋 <b>Привет! Я бот-модератор.</b>\n\n"
-            "Я помогаю следить за порядком в каналах и чатах с помощью ИИ.\n\n"
-            "Чтобы начать, добавь меня в свой канал как администратора.",
-            reply_markup=main_menu(),
-            parse_mode="HTML"
-        )
+async def start(message: Message, command: CommandObject, state: FSMContext):
+    if message.chat.type != ChatType.PRIVATE:
+        return
+
+    # Deep-link: /start <code>
+    code = command.args
+    if code:
+        chats = load_json(CHATS_FILE, {})
+        found_chat_id = None
+        for cid, data in chats.items():
+            if data.get("pending_code") == code:
+                found_chat_id = int(cid)
+                data["owner_id"] = message.from_user.id
+                data["pending_code"] = None
+                save_chat(found_chat_id, data)
+                break
+
+        if found_chat_id:
+            await state.set_state(RulesStates.waiting_rules)
+            await state.update_data(chat_id=found_chat_id)
+            await message.answer(
+                f"✅ <b>Канал «{chats[str(found_chat_id)]['title']}» привязан!</b>\n\n"
+                f"Теперь напиши мне правила модерации для этого канала "
+                f"(например: «Запрещён мат, спам и реклама»).",
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer("❌ Код не найден или устарел.")
+        return
+
+    await message.answer(
+        "👋 <b>Привет! Я бот-модератор.</b>\n\n"
+        "Я помогаю следить за порядком в каналах и чатах с помощью ИИ.\n\n"
+        "Чтобы начать, добавь меня в свой канал как администратора.",
+        reply_markup=main_menu(),
+        parse_mode="HTML"
+    )
 
 # --- ПРИВЯЗКА КАНАЛА (БОТ ДОБАВЛЕН) ---
 @dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> ADMINISTRATOR))
 async def on_bot_added(event: ChatMemberUpdated):
     chat_id = event.chat.id
     chat_title = event.chat.title or "Без названия"
-    
+
+    existing = get_chat(chat_id)
+    # Если канал уже настроен — не сбрасываем настройки при повторном добавлении
+    if existing and existing.get("owner_id"):
+        return
+
     code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    
+
     save_chat(chat_id, {
         "title": chat_title,
         "owner_id": None,
         "rules": "",
-        "sub_until": (datetime.utcnow() + timedelta(days=3)).isoformat(),
+        "sub_until": (utcnow() + timedelta(days=3)).isoformat(),
         "pending_code": code,
         "custom_commands": {},
         "greeting": "👋 Привет, {name}! Добро пожаловать.",
         "farewell": "👋 Пока, {name}.",
         "warn_limit": 3
     })
-    
-    me = await bot.get_me()
-    await bot.send_message(
-        chat_id,
-        f"👋 <b>Привет! Я бот-модератор.</b>\n\n"
-        f"Чтобы привязать этот канал, скопируй код и отправь мне в личку:\n\n"
-        f"<code>{code}</code>\n\n"
-        f"Или нажми кнопку ниже:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Привязать канал", url=f"https://t.me/{me.username}?start={code}")]
-        ]),
-        parse_mode="HTML"
-    )
 
-# --- ПРИВЯЗКА ПО КОДУ ---
-@dp.message(CommandStart(deep_link=True))
-async def start_with_code(message: Message, command: CommandObject):
-    code = command.args
-    if not code:
-        await start(message)
-        return
-    
-    chats = load_json(CHATS_FILE, {})
-    found_chat_id = None
-    for cid, data in chats.items():
-        if data.get("pending_code") == code:
-            found_chat_id = int(cid)
-            data["owner_id"] = message.from_user.id
-            data["pending_code"] = None
-            save_chat(found_chat_id, data)
-            break
-    
-    if found_chat_id:
-        await message.answer(
-            f"✅ <b>Канал «{chats[str(found_chat_id)]['title']}» привязан!</b>\n\n"
-            f"Теперь напиши мне правила модерации для этого канала (например: «Запрещён мат, спам и реклама»).",
+    me = await bot.get_me()
+    try:
+        await bot.send_message(
+            chat_id,
+            f"👋 <b>Привет! Я бот-модератор.</b>\n\n"
+            f"Чтобы привязать этот канал, скопируй код и отправь мне в личку:\n\n"
+            f"<code>{code}</code>\n\n"
+            f"Или нажми кнопку ниже:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔗 Привязать канал", url=f"https://t.me/{me.username}?start={code}")]
+            ]),
             parse_mode="HTML"
         )
-    else:
-        await message.answer("❌ Код не найден или устарел.")
+    except Exception as e:
+        await log_error(f"Не удалось отправить код в канал {chat_id}: {e}")
 
-# --- НАСТРОЙКА ПРАВИЛ ---
-@dp.message(F.text & ~F.text.startswith("/"))
-async def handle_rules(message: Message):
-    if message.chat.type != ChatType.PRIVATE:
+# --- НАСТРОЙКА ПРАВИЛ (FSM) ---
+@dp.message(RulesStates.waiting_rules)
+async def handle_rules(message: Message, state: FSMContext):
+    if message.chat.type != ChatType.PRIVATE or not message.text:
         return
-    
-    chats = load_json(CHATS_FILE, {})
-    target_chat_id = None
-    for cid, data in chats.items():
-        if data.get("owner_id") == message.from_user.id:
-            target_chat_id = cid
-            break
-    
-    if not target_chat_id:
-        await message.answer("Сначала привяжи канал через /start.")
-        return
-    
-    data = chats[target_chat_id]
-    data["rules"] = message.text
-    save_chat(int(target_chat_id), data)
-    
-    await message.answer("✅ Правила сохранены! Теперь я буду модерировать канал по этим правилам.")
 
-# --- ПРИВЕТСТВИЕ / ПРОЩАНИЕ (РАБОТАЕТ В ГРУППАХ) ---
+    data = await state.get_data()
+    chat_id = data.get("chat_id")
+    if not chat_id:
+        await state.clear()
+        await message.answer("❌ Сессия истекла. Начни заново через /start.")
+        return
+
+    chat_data = get_chat(chat_id)
+    if not chat_data:
+        await state.clear()
+        await message.answer("❌ Канал не найден.")
+        return
+
+    chat_data["rules"] = message.text
+    save_chat(chat_id, chat_data)
+    await state.clear()
+
+    await message.answer(
+        f"✅ Правила для «{chat_data['title']}» сохранены! "
+        f"Теперь я буду модерировать канал по этим правилам."
+    )
+
+# --- ПРИВЕТСТВИЕ / ПРОЩАНИЕ ---
 @dp.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> MEMBER))
 async def on_user_join(event: ChatMemberUpdated):
     chat_id = event.chat.id
@@ -238,12 +284,16 @@ async def on_user_join(event: ChatMemberUpdated):
         return
     user_id = event.new_chat_member.user.id
     user_data = get_user(chat_id, user_id)
-    now = datetime.utcnow()
+    now = utcnow()
     last = user_data.get("last_greet")
     if last and (now - datetime.fromisoformat(last)) < timedelta(hours=24):
         return
-    greeting = chat_data["greeting"].replace("{name}", event.new_chat_member.user.first_name)
-    await bot.send_message(chat_id, greeting)
+    greeting = chat_data["greeting"].replace("{name}", event.new_chat_member.user.first_name or "друг")
+    try:
+        await bot.send_message(chat_id, greeting)
+    except Exception as e:
+        await log_error(f"Greeting failed: {e}")
+        return
     user_data["last_greet"] = now.isoformat()
     set_user(chat_id, user_id, user_data)
 
@@ -255,12 +305,16 @@ async def on_user_leave(event: ChatMemberUpdated):
         return
     user_id = event.old_chat_member.user.id
     user_data = get_user(chat_id, user_id)
-    now = datetime.utcnow()
+    now = utcnow()
     last = user_data.get("last_farewell")
     if last and (now - datetime.fromisoformat(last)) < timedelta(hours=1):
         return
-    farewell = chat_data["farewell"].replace("{name}", event.old_chat_member.user.first_name)
-    await bot.send_message(chat_id, farewell)
+    farewell = chat_data["farewell"].replace("{name}", event.old_chat_member.user.first_name or "друг")
+    try:
+        await bot.send_message(chat_id, farewell)
+    except Exception as e:
+        await log_error(f"Farewell failed: {e}")
+        return
     user_data["last_farewell"] = now.isoformat()
     set_user(chat_id, user_id, user_data)
 
@@ -271,19 +325,23 @@ async def moderate_message(message: Message):
     if not chat_data:
         return
 
+    # Проверяем, что бот — админ (иначе удалять/банить не сможет)
+    try:
+        me = await bot.get_me()
+        bot_member = await bot.get_chat_member(chat_id, me.id)
+        if bot_member.status not in ("administrator", "creator"):
+            return
+    except Exception:
+        return
+
     if message.from_user:
         if message.from_user.id == OWNER_ID:
             return
-        try:
-            member = await bot.get_chat_member(chat_id, message.from_user.id)
-            if member.status in ("administrator", "creator"):
-                return
-        except:
-            pass
+        if await is_admin(chat_id, message.from_user.id):
+            return
 
     sub_until = chat_data.get("sub_until")
-    if sub_until and datetime.fromisoformat(sub_until) < datetime.utcnow():
-        await log_error(f"Подписка истекла: {chat_data.get('title')} ({chat_id})")
+    if sub_until and datetime.fromisoformat(sub_until) < utcnow():
         return
 
     rules = chat_data.get("rules", "")
@@ -299,13 +357,19 @@ async def moderate_message(message: Message):
     reason = result.get("reason", "нарушение")
     warn_limit = chat_data.get("warn_limit", 3)
 
-    if action == "warn" and message.from_user:
+    # В канале from_user = None → ban/warn невозможны, только delete
+    is_channel = message.chat.type == ChatType.CHANNEL
+
+    if action == "warn" and message.from_user and not is_channel:
         w = add_warn(chat_id, message.from_user.id)
-        await message.reply(f"⚠️ Предупреждение ({w}/{warn_limit}): {reason}")
+        try:
+            await message.reply(f"⚠️ Предупреждение ({w}/{warn_limit}): {reason}")
+        except Exception:
+            pass
         if w >= warn_limit:
             try:
                 await bot.ban_chat_member(chat_id, message.from_user.id)
-                await message.answer(f"🚫 Забанен за {warn_limit} нарушения.")
+                await bot.send_message(chat_id, f"🚫 Забанен за {warn_limit} нарушения.")
             except Exception as e:
                 await log_error(f"Ban failed: {e}")
     elif action == "delete":
@@ -314,7 +378,7 @@ async def moderate_message(message: Message):
             await bot.send_message(chat_id, f"🗑️ Удалено: {reason}")
         except Exception as e:
             await log_error(f"Delete failed: {e}")
-    elif action == "ban" and message.from_user:
+    elif action == "ban" and message.from_user and not is_channel:
         try:
             await bot.ban_chat_member(chat_id, message.from_user.id)
             await bot.send_message(chat_id, f"🚫 Забанен: {reason}")
@@ -360,30 +424,26 @@ async def cb_list_channels(callback: types.CallbackQuery):
     for cid, data in chats.items():
         if data.get("owner_id") == callback.from_user.id:
             my_chats.append((cid, data))
-    
+
     if not my_chats:
         await callback.message.answer("У тебя пока нет привязанных каналов.")
         return
-    
+
     text = "📋 <b>Твои каналы:</b>\n\n"
     for cid, data in my_chats:
         sub_until = data.get("sub_until", "")
+        status = "❓"
         if sub_until:
             try:
                 dt = datetime.fromisoformat(sub_until)
-                days_left = (dt - datetime.utcnow()).days
-                if days_left > 0:
-                    status = f"✅ активна ({days_left} дн.)"
-                else:
-                    status = "❌ истекла"
-            except:
+                days_left = (dt - utcnow()).days
+                status = f"✅ активна ({days_left} дн.)" if days_left > 0 else "❌ истекла"
+            except Exception:
                 status = "❓"
-        else:
-            status = "❓"
         text += f"• <b>{data.get('title', 'Без названия')}</b>\n"
         text += f"  ID: <code>{cid}</code>\n"
         text += f"  Подписка: {status}\n\n"
-    
+
     await callback.message.answer(text, parse_mode="HTML")
 
 @dp.callback_query(F.data == "settings")
@@ -391,8 +451,10 @@ async def cb_settings(callback: types.CallbackQuery):
     await callback.answer()
     await callback.message.answer(
         "⚙️ <b>Настройки</b>\n\n"
-        "Чтобы изменить правила, просто напиши мне текст правил для канала.\n\n"
+        "Чтобы изменить правила для канала — выбери канал кнопкой ниже "
+        "(или используй /setrules &lt;chat_id&gt;).\n\n"
         "Команды:\n"
+        "/setrules &lt;chat_id&gt; — задать правила\n"
         "/activate &lt;chat_id&gt; &lt;дней&gt; — продлить подписку (только владелец бота)",
         parse_mode="HTML"
     )
@@ -416,51 +478,96 @@ async def cmd_help(message: Message):
         parse_mode="HTML"
     )
 
+# --- ЗАДАНИЕ ПРАВИЛ ЧЕРЕЗ КОМАНДУ ---
+@dp.message(Command("setrules"))
+async def cmd_setrules(message: Message, state: FSMContext):
+    if message.chat.type != ChatType.PRIVATE:
+        await message.answer("Команда работает только в личке с ботом.")
+        return
+
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: /setrules <chat_id>")
+        return
+
+    try:
+        chat_id = int(args[1].strip())
+    except ValueError:
+        await message.answer("chat_id должен быть числом.")
+        return
+
+    chat_data = get_chat(chat_id)
+    if not chat_data or chat_data.get("owner_id") != message.from_user.id:
+        await message.answer("Канал не найден или не принадлежит тебе.")
+        return
+
+    await state.set_state(RulesStates.waiting_rules)
+    await state.update_data(chat_id=chat_id)
+    await message.answer(
+        f"✏️ Напиши новые правила для «{chat_data['title']}»."
+    )
+
 # --- АДМИН-КОМАНДЫ ---
 @dp.message(Command("warn"))
 async def cmd_warn(message: Message):
-    if not message.reply_to_message:
+    if not message.reply_to_message or not message.reply_to_message.from_user:
         await message.reply("Ответь на сообщение пользователя.")
+        return
+    if not message.from_user or not await is_admin(message.chat.id, message.from_user.id):
+        await message.reply("Только админы могут выдавать предупреждения.")
         return
     user_id = message.reply_to_message.from_user.id
     w = add_warn(message.chat.id, user_id)
-    await message.reply(f"⚠️ @{message.reply_to_message.from_user.username} получил предупреждение ({w}/3).")
+    await message.reply(
+        f"⚠️ @{message.reply_to_message.from_user.username or user_id} "
+        f"получил предупреждение ({w}/3)."
+    )
 
 @dp.message(Command("mute"))
 async def cmd_mute(message: Message):
-    if not message.reply_to_message:
+    if not message.reply_to_message or not message.reply_to_message.from_user:
         await message.reply("Ответь на сообщение пользователя.")
+        return
+    if not message.from_user or not await is_admin(message.chat.id, message.from_user.id):
+        await message.reply("Только админы могут мутить.")
         return
     user_id = message.reply_to_message.from_user.id
     try:
         await bot.restrict_chat_member(
             message.chat.id, user_id,
             types.ChatPermissions(can_send_messages=False),
-            until_date=datetime.utcnow() + timedelta(minutes=60)
+            until_date=utcnow() + timedelta(minutes=60)
         )
-        await message.reply(f"🔇 @{message.reply_to_message.from_user.username} замучен на 60 минут.")
+        await message.reply(
+            f"🔇 @{message.reply_to_message.from_user.username or user_id} замучен на 60 минут."
+        )
     except Exception as e:
         await message.reply(f"Ошибка: {e}")
 
 @dp.message(Command("ban"))
 async def cmd_ban(message: Message):
-    if not message.reply_to_message:
+    if not message.reply_to_message or not message.reply_to_message.from_user:
         await message.reply("Ответь на сообщение пользователя.")
+        return
+    if not message.from_user or not await is_admin(message.chat.id, message.from_user.id):
+        await message.reply("Только админы могут банить.")
         return
     user_id = message.reply_to_message.from_user.id
     try:
         await bot.ban_chat_member(message.chat.id, user_id)
-        await message.reply(f"🚫 @{message.reply_to_message.from_user.username} забанен.")
+        await message.reply(
+            f"🚫 @{message.reply_to_message.from_user.username or user_id} забанен."
+        )
     except Exception as e:
         await message.reply(f"Ошибка: {e}")
 
 # --- ПОДПИСКА ---
 @dp.message(Command("activate"))
 async def cmd_activate(message: Message):
-    if message.from_user.id != OWNER_ID:
+    if not message.from_user or message.from_user.id != OWNER_ID:
         await message.reply("Только владелец бота может активировать подписку.")
         return
-    args = message.text.split()
+    args = (message.text or "").split()
     if len(args) < 3:
         await message.reply("Использование: /activate <chat_id> <дней>")
         return
@@ -471,7 +578,7 @@ async def cmd_activate(message: Message):
         if not chat_data:
             await message.reply("Канал не найден.")
             return
-        chat_data["sub_until"] = (datetime.utcnow() + timedelta(days=days)).isoformat()
+        chat_data["sub_until"] = (utcnow() + timedelta(days=days)).isoformat()
         save_chat(chat_id, chat_data)
         await message.reply(f"✅ Подписка для «{chat_data['title']}» продлена на {days} дней.")
     except Exception as e:
