@@ -1,3 +1,9 @@
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message=r'Field "model_.*" in .* has conflict with protected namespace "model_"'
+)
+
 import asyncio
 import os
 import json
@@ -41,7 +47,10 @@ CHATS_FILE = os.path.join(DATA_DIR, "chats.json")
 WARNS_FILE = os.path.join(DATA_DIR, "warns.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 UTC = timezone.utc
@@ -145,7 +154,6 @@ async def check_message_ai(text, rules):
 
 Сообщение: "{text}"
 """
-        # giga.chat синхронный — выносим в поток
         response = await asyncio.to_thread(
             giga.chat,
             Chat(messages=[Messages(role=MessagesRole.USER, content=prompt)])
@@ -213,6 +221,68 @@ async def start(message: Message, command: CommandObject, state: FSMContext):
         parse_mode="HTML"
     )
 
+# --- ОБРАБОТЧИКИ КНОПОК ---
+@dp.callback_query(F.data == "add_channel")
+async def cb_add_channel(callback: CallbackQuery):
+    await callback.answer()
+    me = await bot.get_me()
+    await callback.message.answer(
+        "Чтобы добавить чат:\n\n"
+        "1. Добавь меня в чат (группу) как администратора\n"
+        "2. Я напишу в чат код\n"
+        "3. Скопируй код и отправь мне сюда\n\n"
+        "Или нажми кнопку ниже:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="➕ Добавить в чат",
+                url=f"https://t.me/{me.username}?startgroup=true"
+            )]
+        ])
+    )
+
+@dp.callback_query(F.data == "list_channels")
+async def cb_list_channels(callback: CallbackQuery):
+    await callback.answer()
+    chats = load_json(CHATS_FILE, {})
+    my_chats = []
+    for cid, data in chats.items():
+        if data.get("owner_id") == callback.from_user.id:
+            my_chats.append((cid, data))
+
+    if not my_chats:
+        await callback.message.answer("У тебя пока нет привязанных чатов.")
+        return
+
+    text = "📋 <b>Твои чаты:</b>\n\n"
+    for cid, data in my_chats:
+        sub_until = data.get("sub_until", "")
+        status = "❓"
+        if sub_until:
+            try:
+                dt = datetime.fromisoformat(sub_until)
+                days_left = (dt - utcnow()).days
+                status = f"✅ активна ({days_left} дн.)" if days_left > 0 else "❌ истекла"
+            except Exception:
+                status = "❓"
+        text += f"• <b>{data.get('title', 'Без названия')}</b>\n"
+        text += f"  ID: <code>{cid}</code>\n"
+        text += f"  Подписка: {status}\n\n"
+
+    await callback.message.answer(text, parse_mode="HTML")
+
+@dp.callback_query(F.data == "settings")
+async def cb_settings(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "⚙️ <b>Настройки</b>\n\n"
+        "Чтобы изменить правила для конкретного чата, используй:\n"
+        "<code>/setrules &lt;chat_id&gt;</code>\n\n"
+        "Команды:\n"
+        "/setrules &lt;chat_id&gt; — задать правила\n"
+        "/activate &lt;chat_id&gt; &lt;дней&gt; — продлить подписку (только владелец бота)",
+        parse_mode="HTML"
+    )
+
 # --- ПРИВЯЗКА ЧАТА (БОТ ДОБАВЛЕН В ГРУППУ) ---
 @dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> ADMINISTRATOR))
 async def on_bot_added(event: ChatMemberUpdated):
@@ -220,7 +290,6 @@ async def on_bot_added(event: ChatMemberUpdated):
     chat_title = event.chat.title or "Без названия"
 
     existing = get_chat(chat_id)
-    # Не сбрасываем настройки при повторном добавлении
     if existing and existing.get("owner_id"):
         return
 
@@ -285,6 +354,33 @@ async def handle_rules(message: Message, state: FSMContext):
         f"Теперь я буду модерировать чат по этим правилам."
     )
 
+# --- ЗАДАНИЕ ПРАВИЛ ЧЕРЕЗ КОМАНДУ ---
+@dp.message(Command("setrules"))
+async def cmd_setrules(message: Message, state: FSMContext):
+    if message.chat.type != ChatType.PRIVATE:
+        await message.answer("Команда работает только в личке с ботом.")
+        return
+
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: /setrules <chat_id>")
+        return
+
+    try:
+        chat_id = int(args[1].strip())
+    except ValueError:
+        await message.answer("chat_id должен быть числом.")
+        return
+
+    chat_data = get_chat(chat_id)
+    if not chat_data or chat_data.get("owner_id") != message.from_user.id:
+        await message.answer("Чат не найден или не принадлежит тебе.")
+        return
+
+    await state.set_state(RulesStates.waiting_rules)
+    await state.update_data(chat_id=chat_id)
+    await message.answer(f"✏️ Напиши новые правила для «{chat_data['title']}».")
+
 # --- ПРИВЕТСТВИЕ / ПРОЩАНИЕ ---
 @dp.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> MEMBER))
 async def on_user_join(event: ChatMemberUpdated):
@@ -293,6 +389,8 @@ async def on_user_join(event: ChatMemberUpdated):
     if not chat_data or not chat_data.get("greeting"):
         return
     user_id = event.new_chat_member.user.id
+    if event.new_chat_member.user.is_bot:
+        return
     user_data = get_user(chat_id, user_id)
     now = utcnow()
     last = user_data.get("last_greet")
@@ -315,6 +413,8 @@ async def on_user_leave(event: ChatMemberUpdated):
     if not chat_data or not chat_data.get("farewell"):
         return
     user_id = event.old_chat_member.user.id
+    if event.old_chat_member.user.is_bot:
+        return
     user_data = get_user(chat_id, user_id)
     now = utcnow()
     last = user_data.get("last_farewell")
@@ -337,7 +437,6 @@ async def moderate_message(message: Message):
     if not chat_data:
         return
 
-    # Бот должен быть админом, иначе удалять/банить не сможет
     try:
         me = await bot.get_me()
         bot_member = await bot.get_chat_member(chat_id, me.id)
@@ -349,9 +448,9 @@ async def moderate_message(message: Message):
     if message.from_user:
         if message.from_user.id == OWNER_ID:
             return
-        if await is_admin(chat_id, message.from_user.id):
-            return
         if message.from_user.is_bot:
+            return
+        if await is_admin(chat_id, message.from_user.id):
             return
 
     sub_until = chat_data.get("sub_until")
@@ -493,13 +592,17 @@ async def cmd_activate(message: Message):
     except Exception as e:
         await message.reply(f"Ошибка: {e}")
 
+# --- ОТЛАДОЧНЫЙ ХЕНДЛЕР (в самом конце!) ---
+@dp.callback_query()
+async def debug_callback(callback: CallbackQuery):
+    logger.info(f"🔔 CALLBACK data={callback.data!r} from={callback.from_user.id}")
+    await callback.answer()
+
 # --- ЗАПУСК ---
 async def main():
     logger.info("✅ Бот запущен")
-    await dp.start_polling(
-        bot,
-        allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"]
-    )
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 if __name__ == "__main__":
     asyncio.run(main())
