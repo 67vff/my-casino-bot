@@ -139,12 +139,12 @@ async def start(message: Message):
         await message.answer(
             "👋 <b>Привет! Я бот-модератор.</b>\n\n"
             "Я помогаю следить за порядком в чатах с помощью ИИ.\n\n"
-            "Чтобы начать, добавь меня в свой чат (группу).",
+            "Добавь меня в свой чат (группу) — я напишу туда кнопку для привязки.",
             reply_markup=main_menu(),
             parse_mode="HTML"
         )
 
-# --- КНОПКА «ДОБАВИТЬ ЧАТ» (ДВЕ ОПЦИИ) ---
+# --- КНОПКА «ДОБАВИТЬ ЧАТ» ---
 @dp.callback_query(F.data == "add_channel")
 async def cb_add_channel(callback: CallbackQuery):
     await callback.answer()
@@ -152,49 +152,13 @@ async def cb_add_channel(callback: CallbackQuery):
     admin_url = f"https://t.me/{me.username}?startgroup=true&admin=delete_messages+restrict_members+invite_users"
     await callback.message.answer(
         f"<b>Добавление чата</b>\n\n"
-        f"<b>Способ 1:</b> Нажми кнопку ниже — Telegram предложит добавить меня с правами.\n\n"
-        f"<b>Способ 2:</b> Добавь меня в чат вручную (как админа), потом нажми «📨 Прислать код» — я пришлю код в личку.",
+        f"1. Нажми кнопку ниже\n"
+        f"2. Выбери группу\n"
+        f"3. Подтверди права\n\n"
+        f"После добавления я напишу в чат кнопку «✅ Привязать чат».",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➕ Добавить в чат (с правами)", url=admin_url)],
-            [InlineKeyboardButton(text="📨 Прислать код", callback_data="send_code")],
-        ]),
-        parse_mode="HTML"
-    )
-
-# --- КНОПКА «ПРИСЛАТЬ КОД» (ИЩЕТ ПОСЛЕДНИЙ НЕПРИВЯЗАННЫЙ ЧАТ) ---
-@dp.callback_query(F.data == "send_code")
-async def cb_send_code(callback: CallbackQuery):
-    await callback.answer()
-    chats = load_json(CHATS_FILE, {})
-    
-    # Ищем последний непривязанный чат
-    found = None
-    for cid, data in chats.items():
-        if data.get("pending_code") and not data.get("owner_id"):
-            found = (cid, data)
-            break
-    
-    if not found:
-        await callback.message.answer(
-            "❌ Нет непривязанных чатов.\n\n"
-            "Сначала добавь меня в чат как администратора, потом нажми эту кнопку.",
-            parse_mode="HTML"
-        )
-        return
-    
-    cid, data = found
-    me = await bot.get_me()
-    code = data["pending_code"]
-    await callback.message.answer(
-        f"🔗 <b>Код для чата «{data.get('title', 'Чат')}»</b>\n\n"
-        f"Нажми кнопку ниже, чтобы привязать чат:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="🔗 Привязать чат",
-                url=f"https://t.me/{me.username}?start={code}"
-            )]
-        ]),
-        parse_mode="HTML"
+        ])
     )
 
 # --- КНОПКА «МОИ ЧАТЫ» ---
@@ -213,25 +177,13 @@ async def cb_list_channels(callback: CallbackQuery):
     
     buttons = []
     for cid, data in my_chats:
-        sub_until = data.get("sub_until", "")
-        status = ""
-        if sub_until:
-            try:
-                dt = datetime.fromisoformat(sub_until)
-                days_left = (dt - datetime.utcnow()).days
-                if days_left > 0:
-                    status = f" ✅ {days_left}д"
-                else:
-                    status = " ❌"
-            except:
-                pass
         buttons.append([InlineKeyboardButton(
-            text=f"📋 {data.get('title', 'Чат')}{status}",
+            text=f"📋 {data.get('title', 'Чат')}",
             callback_data=f"chat_{cid}"
         )])
     
     await callback.message.answer(
-        "📋 <b>Твои чаты:</b>\n\nВыбери чат:",
+        "📋 <b>Твои чаты:</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode="HTML"
     )
@@ -242,45 +194,22 @@ async def cb_chat_menu(callback: CallbackQuery):
     await callback.answer()
     chat_id = callback.data.replace("chat_", "")
     chat_data = get_chat(chat_id)
-    if not chat_data:
-        await callback.message.answer("Чат не найден.")
-        return
-    
-    if chat_data.get("owner_id") != callback.from_user.id:
+    if not chat_data or chat_data.get("owner_id") != callback.from_user.id:
         await callback.message.answer("Это не твой чат.")
         return
     
-    sub_until = chat_data.get("sub_until", "")
-    status = "❓"
-    if sub_until:
-        try:
-            dt = datetime.fromisoformat(sub_until)
-            days_left = (dt - datetime.utcnow()).days
-            if days_left > 0:
-                status = f"✅ активна ({days_left} дн.)"
-            else:
-                status = "❌ истекла"
-        except:
-            pass
-    
-    text = (
-        f"📋 <b>{chat_data.get('title', 'Чат')}</b>\n\n"
-        f"ID: <code>{chat_id}</code>\n"
-        f"Подписка: {status}\n\n"
-        f"Что хочешь сделать?"
-    )
+    text = f"📋 <b>{chat_data.get('title', 'Чат')}</b>\n\nID: <code>{chat_id}</code>"
     
     await callback.message.answer(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✏️ Настроить действия бота", callback_data=f"settings_{chat_id}")],
-            [InlineKeyboardButton(text="📚 База знаний", callback_data=f"knowledge_{chat_id}")],
+            [InlineKeyboardButton(text="✏️ Настроить действия", callback_data=f"settings_{chat_id}")],
             [InlineKeyboardButton(text="🗑️ Удалить чат", callback_data=f"delete_{chat_id}")],
         ]),
         parse_mode="HTML"
     )
 
-# --- НАСТРОИТЬ ДЕЙСТВИЯ (ЖДЁМ ТЕКСТ) ---
+# --- НАСТРОЙКА ПРАВИЛ ---
 @dp.callback_query(F.data.startswith("settings_"))
 async def cb_settings(callback: CallbackQuery):
     await callback.answer()
@@ -292,38 +221,13 @@ async def cb_settings(callback: CallbackQuery):
     
     await callback.message.answer(
         f"✏️ <b>Настройка чата «{chat_data.get('title', 'Чат')}»</b>\n\n"
-        f"<b>Напиши текст правил</b> для этого чата. Например:\n"
-        f"<i>«Запрещён мат, спам и реклама. За мат — предупреждение, за спам — бан»</i>",
+        f"Напиши текст правил для этого чата.",
         parse_mode="HTML"
     )
     
     users = load_json(USERS_FILE, {})
-    key = f"waiting_rules_{callback.from_user.id}"
-    users[key] = chat_id
+    users[f"waiting_rules_{callback.from_user.id}"] = chat_id
     save_json(USERS_FILE, users)
-
-# --- БАЗА ЗНАНИЙ ---
-@dp.callback_query(F.data.startswith("knowledge_"))
-async def cb_knowledge(callback: CallbackQuery):
-    await callback.answer()
-    chat_id = callback.data.replace("knowledge_", "")
-    chat_data = get_chat(chat_id)
-    if not chat_data or chat_data.get("owner_id") != callback.from_user.id:
-        await callback.message.answer("Это не твой чат.")
-        return
-    
-    rules = chat_data.get("rules", "")
-    if not rules:
-        await callback.message.answer(
-            "📚 <b>База знаний пуста.</b>\n\n"
-            "Напиши правила через «✏️ Настроить действия бота».",
-            parse_mode="HTML"
-        )
-    else:
-        await callback.message.answer(
-            f"📚 <b>База знаний чата «{chat_data.get('title', 'Чат')}»:</b>\n\n{rules}",
-            parse_mode="HTML"
-        )
 
 # --- УДАЛИТЬ ЧАТ ---
 @dp.callback_query(F.data.startswith("delete_"))
@@ -336,9 +240,42 @@ async def cb_delete_chat(callback: CallbackQuery):
         return
     
     delete_chat(chat_id)
-    await callback.message.answer(
-        f"🗑️ Чат «{chat_data.get('title', 'Чат')}» удалён из списка."
+    await callback.message.answer(f"🗑️ Чат «{chat_data.get('title', 'Чат')}» удалён.")
+
+# --- ПРИВЯЗКА ЧАТА ПО КНОПКЕ В ЧАТЕ ---
+@dp.callback_query(F.data.startswith("bind_"))
+async def cb_bind_chat(callback: CallbackQuery):
+    chat_id = callback.data.replace("bind_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data:
+        await callback.answer("Чат не найден.", show_alert=True)
+        return
+    
+    if chat_data.get("owner_id"):
+        await callback.answer("Этот чат уже привязан.", show_alert=True)
+        return
+    
+    # Привязываем
+    chat_data["owner_id"] = callback.from_user.id
+    save_chat(int(chat_id), chat_data)
+    
+    await callback.answer("✅ Чат привязан!", show_alert=True)
+    await callback.message.edit_text(
+        f"✅ <b>Чат «{chat_data.get('title', 'Чат')}» привязан!</b>\n\n"
+        f"Теперь напиши мне правила модерации в личку.",
+        parse_mode="HTML"
     )
+    
+    # Пишем в личку владельцу
+    try:
+        await bot.send_message(
+            callback.from_user.id,
+            f"✅ <b>Чат «{chat_data.get('title', 'Чат')}» привязан!</b>\n\n"
+            f"Теперь напиши мне правила модерации для этого чата.",
+            parse_mode="HTML"
+        )
+    except:
+        pass
 
 # --- ПРИВЯЗКА ЧАТА (БОТ ДОБАВЛЕН) ---
 @dp.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> (ADMINISTRATOR | MEMBER)))
@@ -351,80 +288,38 @@ async def on_bot_added(event: ChatMemberUpdated):
     if member.status == "administrator":
         has_rights = member.can_delete_messages and member.can_restrict_members
     
+    save_chat(chat_id, {
+        "title": chat_title,
+        "owner_id": None,
+        "rules": "",
+        "sub_until": (datetime.utcnow() + timedelta(days=3)).isoformat(),
+        "bot_is_admin": has_rights,
+        "greeting": "👋 Привет, {name}! Добро пожаловать.",
+        "farewell": "👋 Пока, {name}.",
+        "warn_limit": 3
+    })
+    
     if has_rights:
-        code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        save_chat(chat_id, {
-            "title": chat_title,
-            "owner_id": None,
-            "rules": "",
-            "sub_until": (datetime.utcnow() + timedelta(days=3)).isoformat(),
-            "pending_code": code,
-            "custom_commands": {},
-            "greeting": "👋 Привет, {name}! Добро пожаловать.",
-            "farewell": "👋 Пока, {name}.",
-            "warn_limit": 3
-        })
-        me = await bot.get_me()
         await bot.send_message(
             chat_id,
             f"👋 <b>Привет! Я бот-модератор.</b>\n\n"
-            f"Чтобы привязать этот чат, открой меня в личке и нажми «📨 Прислать код».\n\n"
-            f"Или скопируй код: <code>{code}</code>",
+            f"Нажми кнопку ниже, чтобы привязать этот чат.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔗 Привязать чат", url=f"https://t.me/{me.username}?start={code}")]
+                [InlineKeyboardButton(text="✅ Привязать чат", callback_data=f"bind_{chat_id}")]
             ]),
             parse_mode="HTML"
         )
     else:
-        save_chat(chat_id, {
-            "title": chat_title,
-            "owner_id": None,
-            "rules": "",
-            "sub_until": (datetime.utcnow() + timedelta(days=3)).isoformat(),
-            "pending_code": None,
-            "custom_commands": {},
-            "greeting": "👋 Привет, {name}! Добро пожаловать.",
-            "farewell": "👋 Пока, {name}.",
-            "warn_limit": 3
-        })
         try:
             await bot.send_message(
                 chat_id,
-                "⚠️ <b>Внимание!</b>\n\n"
-                "Чтобы я мог удалять мат и банить спамеров, выдай мне права администратора:\n"
+                "⚠️ <b>Дай мне права администратора:</b>\n"
                 "• Удалять сообщения\n"
                 "• Блокировать участников",
                 parse_mode="HTML"
             )
         except:
             pass
-
-# --- ПРИВЯЗКА ПО КОДУ ---
-@dp.message(CommandStart(deep_link=True))
-async def start_with_code(message: Message, command: CommandObject):
-    code = command.args
-    if not code:
-        await start(message)
-        return
-    
-    chats = load_json(CHATS_FILE, {})
-    found_chat_id = None
-    for cid, data in chats.items():
-        if data.get("pending_code") == code:
-            found_chat_id = int(cid)
-            data["owner_id"] = message.from_user.id
-            data["pending_code"] = None
-            save_chat(found_chat_id, data)
-            break
-    
-    if found_chat_id:
-        await message.answer(
-            f"✅ <b>Чат «{chats[str(found_chat_id)]['title']}» привязан!</b>\n\n"
-            f"Теперь напиши мне правила модерации для этого чата (например: «Запрещён мат, спам и реклама»).",
-            parse_mode="HTML"
-        )
-    else:
-        await message.answer("❌ Код не найден или устарел. Попробуй «📨 Прислать код».")
 
 # --- ОБРАБОТКА ТЕКСТА ПРАВИЛ ---
 @dp.message(F.text & ~F.text.startswith("/") & (F.chat.type == ChatType.PRIVATE))
@@ -447,11 +342,7 @@ async def handle_rules(message: Message):
     del users[key]
     save_json(USERS_FILE, users)
     
-    await message.answer(
-        f"✅ Правила для чата «{chat_data.get('title', 'Чат')}» сохранены!\n\n"
-        f"Теперь я буду модерировать по этим правилам.",
-        parse_mode="HTML"
-    )
+    await message.answer(f"✅ Правила для чата «{chat_data.get('title', 'Чат')}» сохранены!")
 
 # --- ПРИВЕТСТВИЕ / ПРОЩАНИЕ ---
 @dp.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> MEMBER))
@@ -552,7 +443,7 @@ async def moderate_group_message(message: Message):
         return
     await moderate_message(message)
 
-# --- КОМАНДЫ В ЧАТЕ ---
+# --- КОМАНДЫ ---
 @dp.message(F.text.lower().in_({"правила", "/правила"}))
 async def cmd_rules(message: Message):
     chat_data = get_chat(message.chat.id)
@@ -560,75 +451,6 @@ async def cmd_rules(message: Message):
         await message.reply(f"📜 <b>Правила:</b>\n\n{chat_data['rules']}", parse_mode="HTML")
     else:
         await message.reply("Правила ещё не настроены.")
-
-@dp.message(F.text.lower().in_({"помощь", "/help", "help"}))
-async def cmd_help(message: Message):
-    await message.reply(
-        "📋 <b>Доступные команды:</b>\n\n"
-        "/правила — показать правила\n"
-        "/help — эта справка\n\n"
-        "Админы: /warn, /mute, /ban (реплаем).",
-        parse_mode="HTML"
-    )
-
-@dp.message(Command("warn"))
-async def cmd_warn(message: Message):
-    if not message.reply_to_message:
-        await message.reply("Ответь на сообщение пользователя.")
-        return
-    user_id = message.reply_to_message.from_user.id
-    w = add_warn(message.chat.id, user_id)
-    await message.reply(f"⚠️ @{message.reply_to_message.from_user.username} получил предупреждение ({w}/3).")
-
-@dp.message(Command("mute"))
-async def cmd_mute(message: Message):
-    if not message.reply_to_message:
-        await message.reply("Ответь на сообщение пользователя.")
-        return
-    user_id = message.reply_to_message.from_user.id
-    try:
-        await bot.restrict_chat_member(
-            message.chat.id, user_id,
-            types.ChatPermissions(can_send_messages=False),
-            until_date=datetime.utcnow() + timedelta(minutes=60)
-        )
-        await message.reply(f"🔇 @{message.reply_to_message.from_user.username} замучен на 60 минут.")
-    except Exception as e:
-        await message.reply(f"Ошибка: {e}")
-
-@dp.message(Command("ban"))
-async def cmd_ban(message: Message):
-    if not message.reply_to_message:
-        await message.reply("Ответь на сообщение пользователя.")
-        return
-    user_id = message.reply_to_message.from_user.id
-    try:
-        await bot.ban_chat_member(message.chat.id, user_id)
-        await message.reply(f"🚫 @{message.reply_to_message.from_user.username} забанен.")
-    except Exception as e:
-        await message.reply(f"Ошибка: {e}")
-
-@dp.message(Command("activate"))
-async def cmd_activate(message: Message):
-    if message.from_user.id != OWNER_ID:
-        await message.reply("Только владелец бота может активировать подписку.")
-        return
-    args = message.text.split()
-    if len(args) < 3:
-        await message.reply("Использование: /activate <chat_id> <дней>")
-        return
-    try:
-        chat_id = int(args[1])
-        days = int(args[2])
-        chat_data = get_chat(chat_id)
-        if not chat_data:
-            await message.reply("Чат не найден.")
-            return
-        chat_data["sub_until"] = (datetime.utcnow() + timedelta(days=days)).isoformat()
-        save_chat(chat_id, chat_data)
-        await message.reply(f"✅ Подписка для «{chat_data['title']}» продлена на {days} дней.")
-    except Exception as e:
-        await message.reply(f"Ошибка: {e}")
 
 # --- ЗАПУСК ---
 async def main():
