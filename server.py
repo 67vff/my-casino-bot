@@ -110,13 +110,25 @@ async def log_error(text):
 
 async def check_message_ai(text, rules):
     try:
-        prompt = f"""Ты — модератор Telegram-чата. Правила чата:
+        prompt = f"""Ты — строгий модератор Telegram-чата. Твоя задача — анализировать сообщения и выбирать ОДНО действие из списка.
+
+ПРАВИЛА ЧАТА:
 {rules}
 
-Проанализируй сообщение. Ответь ТОЛЬКО JSON:
+ОПРЕДЕЛЕНИЯ ДЕЙСТВИЙ (запомни их чётко):
+- "warn" (предупреждение): пользователь нарушил правило, но это не критично. Бот напишет предупреждение в чат.
+- "delete" (удаление сообщения): сообщение содержит спам, рекламу или ссылку, которую нельзя оставлять. Бот удалит ТОЛЬКО сообщение, пользователь остаётся в чате.
+- "mute" (мут): пользователь повторно нарушил правило (например, 3-е предупреждение). Бот ограничит право писать сообщения на время (например, 60 минут). Пользователь МОЖЕТ ЧИТАТЬ чат, но НЕ МОЖЕТ ПИСАТЬ.
+- "ban" (бан): пользователь грубо нарушил правило (оскорбления, угрозы, реклама в личку). Бот удалит пользователя из чата НАВСЕГДА.
+- "none": сообщение чистое, ничего не делать.
+
+ВАЖНО: Если пользователь просто спрашивает или общается (например, "поговори со мной", "привет", "как дела") — это НЕ нарушение. Действие = "none".
+
+Проанализируй сообщение и верни ТОЛЬКО JSON без пояснений:
 {{"action": "none"}}
 {{"action": "warn", "reason": "причина"}}
 {{"action": "delete", "reason": "причина"}}
+{{"action": "mute", "minutes": 60, "reason": "причина"}}
 {{"action": "ban", "reason": "причина"}}
 
 Сообщение: "{text}"
@@ -131,7 +143,9 @@ async def check_message_ai(text, rules):
         start = content.find("{")
         end = content.rfind("}") + 1
         if start >= 0 and end > start:
-            return json.loads(content[start:end])
+            result = json.loads(content[start:end])
+            logger.info(f"AI result: {result}")
+            return result
         return {"action": "none"}
     except Exception as e:
         await log_error(f"GigaChat: {e}")
@@ -271,7 +285,7 @@ async def cb_settings(callback: CallbackQuery):
     
     await callback.message.answer(
         f"✏️ <b>Настройка чата «{chat_data.get('title', 'Чат')}»</b>\n\n"
-        f"Напиши, что нужно настроить (например: «Запрещён мат, спам и реклама»).\n"
+        f"Напиши, что нужно настроить (например: «Запрещён мат, спам и реклама. За 3 предупреждения — мут на час»).\n"
         f"ИИ предложит вариант, а ты сможешь сохранить или отменить.",
         parse_mode="HTML"
     )
@@ -511,7 +525,6 @@ async def moderate_message(message: Message):
 
     sub_until = chat_data.get("sub_until")
     if sub_until and datetime.fromisoformat(sub_until) < datetime.utcnow():
-        await log_error(f"Подписка истекла: {chat_data.get('title')} ({chat_id})")
         return
 
     rules = chat_data.get("rules", "")
@@ -532,16 +545,33 @@ async def moderate_message(message: Message):
         await message.reply(f"⚠️ Предупреждение ({w}/{warn_limit}): {reason}")
         if w >= warn_limit:
             try:
-                await bot.ban_chat_member(chat_id, message.from_user.id)
-                await message.answer(f"🚫 Забанен за {warn_limit} нарушения.")
+                await bot.restrict_chat_member(
+                    chat_id=chat_id,
+                    user_id=message.from_user.id,
+                    permissions=types.ChatPermissions(can_send_messages=False),
+                    until_date=timedelta(minutes=60)
+                )
+                await message.answer(f"🔇 Замучен на 60 минут за {warn_limit} нарушения.")
             except Exception as e:
-                await log_error(f"Ban failed: {e}")
+                await log_error(f"Mute failed: {e}")
     elif action == "delete":
         try:
             await message.delete()
             await bot.send_message(chat_id, f"🗑️ Удалено: {reason}")
         except Exception as e:
             await log_error(f"Delete failed: {e}")
+    elif action == "mute" and message.from_user:
+        try:
+            minutes = result.get("minutes", 60)
+            await bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=message.from_user.id,
+                permissions=types.ChatPermissions(can_send_messages=False),
+                until_date=timedelta(minutes=minutes)
+            )
+            await message.answer(f"🔇 @{message.from_user.username} замучен на {minutes} минут: {reason}")
+        except Exception as e:
+            await log_error(f"Mute failed: {e}")
     elif action == "ban" and message.from_user:
         try:
             await bot.ban_chat_member(chat_id, message.from_user.id)
@@ -563,7 +593,6 @@ async def cmd_rules(message: Message):
     else:
         await message.reply("Правила ещё не настроены.")
 
-# --- ИСПРАВЛЕННЫЙ МУТ ---
 @dp.message(Command("mute"))
 async def cmd_mute(message: Message):
     if message.chat.type not in ("group", "supergroup"):
