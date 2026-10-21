@@ -11,7 +11,6 @@ from aiogram.filters import (
     Command, CommandStart,
     ChatMemberUpdatedFilter, IS_NOT_MEMBER, ADMINISTRATOR, MEMBER
 )
-from aiogram.filters.command import CommandObject
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, ChatMemberUpdated, CallbackQuery
 )
@@ -31,6 +30,7 @@ CHATS_FILE = os.path.join(DATA_DIR, "chats.json")
 WARNS_FILE = os.path.join(DATA_DIR, "warns.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
+KNOWLEDGE_FILE = os.path.join(DATA_DIR, "knowledge.json")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +63,12 @@ def delete_chat(chat_id):
     if str(chat_id) in chats:
         del chats[str(chat_id)]
         save_json(CHATS_FILE, chats)
+    # Удаляем историю и знания
+    for f in [HISTORY_FILE, KNOWLEDGE_FILE]:
+        d = load_json(f, {})
+        if str(chat_id) in d:
+            del d[str(chat_id)]
+            save_json(f, d)
 
 def get_history(chat_id):
     h = load_json(HISTORY_FILE, {})
@@ -70,8 +76,23 @@ def get_history(chat_id):
 
 def save_history(chat_id, hist):
     h = load_json(HISTORY_FILE, {})
-    h[str(chat_id)] = hist[-20:]
+    h[str(chat_id)] = hist[-30:]
     save_json(HISTORY_FILE, h)
+
+def clear_history(chat_id):
+    h = load_json(HISTORY_FILE, {})
+    if str(chat_id) in h:
+        del h[str(chat_id)]
+        save_json(HISTORY_FILE, h)
+
+def get_knowledge(chat_id):
+    k = load_json(KNOWLEDGE_FILE, {})
+    return k.get(str(chat_id), {"text": ""})
+
+def save_knowledge(chat_id, data):
+    k = load_json(KNOWLEDGE_FILE, {})
+    k[str(chat_id)] = data
+    save_json(KNOWLEDGE_FILE, k)
 
 def get_warns(chat_id, user_id):
     warns = load_json(WARNS_FILE, {})
@@ -83,6 +104,13 @@ def add_warn(chat_id, user_id):
     warns[key] = warns.get(key, 0) + 1
     save_json(WARNS_FILE, warns)
     return warns[key]
+
+def reset_warns(chat_id, user_id):
+    warns = load_json(WARNS_FILE, {})
+    key = f"{chat_id}_{user_id}"
+    if key in warns:
+        warns[key] = 0
+        save_json(WARNS_FILE, warns)
 
 def get_user(chat_id, user_id):
     users = load_json(USERS_FILE, {})
@@ -108,23 +136,31 @@ async def log_error(text):
         except:
             pass
 
-async def check_message_ai(text, rules):
+# --- МОДЕРАЦИЯ ---
+async def check_message_ai(text, rules, knowledge=""):
     try:
-        prompt = f"""Ты — строгий модератор Telegram-чата. Твоя задача — анализировать сообщения и выбирать ОДНО действие из списка.
+        prompt = f"""Ты — строгий модератор Telegram-чата. Анализируй сообщение и выбирай ОДНО действие.
 
 ПРАВИЛА ЧАТА:
 {rules}
 
-ОПРЕДЕЛЕНИЯ ДЕЙСТВИЙ (запомни их чётко):
-- "warn" (предупреждение): пользователь нарушил правило, но это не критично. Бот напишет предупреждение в чат.
-- "delete" (удаление сообщения): сообщение содержит спам, рекламу или ссылку, которую нельзя оставлять. Бот удалит ТОЛЬКО сообщение, пользователь остаётся в чате.
-- "mute" (мут): пользователь повторно нарушил правило (например, 3-е предупреждение). Бот ограничит право писать сообщения на время (например, 60 минут). Пользователь МОЖЕТ ЧИТАТЬ чат, но НЕ МОЖЕТ ПИСАТЬ.
-- "ban" (бан): пользователь грубо нарушил правило (оскорбления, угрозы, реклама в личку). Бот удалит пользователя из чата НАВСЕГДА.
-- "none": сообщение чистое, ничего не делать.
+БАЗА ЗНАНИЙ:
+{knowledge if knowledge else "(пусто)"}
 
-ВАЖНО: Если пользователь просто спрашивает или общается (например, "поговори со мной", "привет", "как дела") — это НЕ нарушение. Действие = "none".
+ДЕЙСТВИЯ:
+- "none" — всё чисто
+- "warn" — предупреждение (лёгкое нарушение)
+- "delete" — удалить сообщение (спам, реклама, мат)
+- "mute" — замутить на 60 минут (3-е нарушение, конфликт)
+- "ban" — забанить (угрозы, реклама в личку)
 
-Проанализируй сообщение и верни ТОЛЬКО JSON без пояснений:
+ВАЖНО:
+- Если пользователь просто общается ("привет", "как дела") — "none"
+- Если просит поговорить — "none"
+- Если скандалит, оскорбляет — "warn", потом "mute"
+- Если спамит ссылками — "delete"
+
+Верни ТОЛЬКО JSON:
 {{"action": "none"}}
 {{"action": "warn", "reason": "причина"}}
 {{"action": "delete", "reason": "причина"}}
@@ -151,6 +187,48 @@ async def check_message_ai(text, rules):
         await log_error(f"GigaChat: {e}")
         return {"action": "none"}
 
+# --- ОБЩЕНИЕ С ИИ ---
+async def ai_chat(chat_id, user_text, user_name):
+    history = get_history(chat_id)
+    history.append({"role": "user", "content": f"{user_name}: {user_text}"})
+    
+    chat_data = get_chat(chat_id)
+    rules = chat_data.get("rules", "") if chat_data else ""
+    knowledge = get_knowledge(chat_id)
+    ktext = knowledge.get("text", "")
+    
+    system_prompt = f"""Ты — дружелюбный ИИ-собеседник в Telegram-чате. Общайся естественно, отвечай на вопросы, поддерживай беседу.
+
+Правила чата:
+{rules if rules else "(не настроены)"}
+
+База знаний:
+{ktext if ktext else "(пусто)"}
+
+Отвечай кратко (1-3 предложения), дружелюбно, по делу."""
+    
+    messages = [Messages(role=MessagesRole.SYSTEM, content=system_prompt)]
+    for h in history[-10:]:
+        role = MessagesRole.USER if h["role"] == "user" else MessagesRole.ASSISTANT
+        messages.append(Messages(role=role, content=h["content"]))
+    
+    try:
+        response = giga.chat(Chat(messages=messages))
+        content = ""
+        if hasattr(response, "choices") and response.choices:
+            content = response.choices[0].message.content
+        elif hasattr(response, "messages") and response.messages:
+            content = response.messages[0].content
+        content = content.strip()
+        
+        history.append({"role": "assistant", "content": content})
+        save_history(chat_id, history)
+        return content
+    except Exception as e:
+        await log_error(f"AI chat: {e}")
+        return "Не могу ответить. Попробуй позже."
+
+# --- НАСТРОЙКА ПРАВИЛ ---
 async def ask_ai_for_rules(chat_id, user_text):
     history = get_history(chat_id)
     history.append({"role": "user", "content": user_text})
@@ -164,11 +242,11 @@ async def ask_ai_for_rules(chat_id, user_text):
 {current_rules if current_rules else "(пусто)"}
 
 Твоя задача:
-1. Понять, что пользователь хочет изменить/добавить в правилах.
+1. Понять, что пользователь хочет изменить/добавить.
 2. Если непонятно — переспроси.
 3. Если понятно — сформулируй новые правила красиво и предложи их.
 
-Отвечай кратко и по делу."""
+Отвечай кратко."""
     
     messages = [Messages(role=MessagesRole.SYSTEM, content=system_prompt)]
     for h in history[-10:]:
@@ -269,6 +347,7 @@ async def cb_chat_menu(callback: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✏️ Настроить действия", callback_data=f"settings_{chat_id}")],
             [InlineKeyboardButton(text="📚 База знаний", callback_data=f"knowledge_{chat_id}")],
+            [InlineKeyboardButton(text="📊 Статистика", callback_data=f"stats_{chat_id}")],
             [InlineKeyboardButton(text="🗑️ Удалить чат", callback_data=f"delete_{chat_id}")],
         ]),
         parse_mode="HTML"
@@ -285,7 +364,7 @@ async def cb_settings(callback: CallbackQuery):
     
     await callback.message.answer(
         f"✏️ <b>Настройка чата «{chat_data.get('title', 'Чат')}»</b>\n\n"
-        f"Напиши, что нужно настроить (например: «Запрещён мат, спам и реклама. За 3 предупреждения — мут на час»).\n"
+        f"Напиши, что нужно настроить (например: «Запрещён мат, спам. За 3 предупреждения — мут»).\n"
         f"ИИ предложит вариант, а ты сможешь сохранить или отменить.",
         parse_mode="HTML"
     )
@@ -304,10 +383,57 @@ async def cb_knowledge(callback: CallbackQuery):
         return
     
     rules = chat_data.get("rules", "")
-    if not rules:
-        await callback.message.answer("📚 <b>База знаний пуста.</b>", parse_mode="HTML")
-    else:
-        await callback.message.answer(f"📚 <b>Правила:</b>\n\n{rules}", parse_mode="HTML")
+    knowledge = get_knowledge(chat_id)
+    ktext = knowledge.get("text", "")
+    
+    await callback.message.answer(
+        f"📚 <b>База знаний чата «{chat_data.get('title', 'Чат')}»</b>\n\n"
+        f"<b>Правила:</b>\n{rules if rules else '(пусто)'}\n\n"
+        f"<b>Заметки:</b>\n{ktext if ktext else '(пусто)'}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ Добавить заметку", callback_data=f"addknowledge_{chat_id}")],
+            [InlineKeyboardButton(text="🗑️ Очистить базу знаний", callback_data=f"clearknowledge_{chat_id}")],
+        ]),
+        parse_mode="HTML"
+    )
+
+@dp.callback_query(F.data.startswith("addknowledge_"))
+async def cb_addknowledge(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("addknowledge_", "")
+    await callback.message.answer("✏️ Напиши, что добавить в базу знаний (например: «Правило: не спамить ссылками»).")
+    
+    users = load_json(USERS_FILE, {})
+    users[f"waiting_knowledge_{callback.from_user.id}"] = chat_id
+    save_json(USERS_FILE, users)
+
+@dp.callback_query(F.data.startswith("clearknowledge_"))
+async def cb_clearknowledge(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("clearknowledge_", "")
+    save_knowledge(chat_id, {"text": ""})
+    await callback.message.answer("🗑️ База знаний очищена.")
+
+@dp.callback_query(F.data.startswith("stats_"))
+async def cb_stats(callback: CallbackQuery):
+    await callback.answer()
+    chat_id = callback.data.replace("stats_", "")
+    chat_data = get_chat(chat_id)
+    if not chat_data or chat_data.get("owner_id") != callback.from_user.id:
+        await callback.message.answer("Это не твой чат.")
+        return
+    
+    warns = load_json(WARNS_FILE, {})
+    total_warns = sum(1 for k in warns if k.startswith(f"{chat_id}_"))
+    history = get_history(chat_id)
+    
+    await callback.message.answer(
+        f"📊 <b>Статистика чата «{chat_data.get('title', 'Чат')}»</b>\n\n"
+        f"Правила: {'✅ есть' if chat_data.get('rules') else '❌ нет'}\n"
+        f"История ИИ: {len(history)} сообщений\n"
+        f"Пользователей с варнами: {total_warns}",
+        parse_mode="HTML"
+    )
 
 @dp.callback_query(F.data.startswith("delete_"))
 async def cb_delete_chat(callback: CallbackQuery):
@@ -322,34 +448,46 @@ async def cb_delete_chat(callback: CallbackQuery):
     await callback.message.answer(f"🗑️ Чат «{chat_data.get('title', 'Чат')}» удалён.")
 
 @dp.message(F.text & ~F.text.startswith("/") & (F.chat.type == ChatType.PRIVATE))
-async def handle_rules(message: Message):
+async def handle_private(message: Message):
     users = load_json(USERS_FILE, {})
-    key = f"waiting_rules_{message.from_user.id}"
-    chat_id = users.get(key)
     
-    if not chat_id:
+    # Правила
+    key_rules = f"waiting_rules_{message.from_user.id}"
+    chat_id_rules = users.get(key_rules)
+    if chat_id_rules:
+        chat_data = get_chat(chat_id_rules)
+        if not chat_data:
+            await message.answer("Чат не найден.")
+            return
+        
+        ai_response = await ask_ai_for_rules(chat_id_rules, message.text)
+        chat_data["draft"] = ai_response
+        save_chat(int(chat_id_rules), chat_data)
+        
+        await message.answer(
+            f"🤖 <b>ИИ предлагает:</b>\n\n{ai_response}\n\nЧто сделать?",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Сохранить", callback_data=f"save_{chat_id_rules}")],
+                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{chat_id_rules}")],
+                [InlineKeyboardButton(text="➕ Дописать", callback_data=f"append_{chat_id_rules}")],
+            ]),
+            parse_mode="HTML"
+        )
         return
     
-    chat_data = get_chat(chat_id)
-    if not chat_data:
-        await message.answer("Чат не найден.")
+    # База знаний
+    key_know = f"waiting_knowledge_{message.from_user.id}"
+    chat_id_know = users.get(key_know)
+    if chat_id_know:
+        knowledge = get_knowledge(chat_id_know)
+        knowledge["text"] = knowledge.get("text", "") + "\n" + message.text
+        save_knowledge(chat_id_know, knowledge)
+        
+        del users[key_know]
+        save_json(USERS_FILE, users)
+        
+        await message.answer("✅ Добавлено в базу знаний!")
         return
-    
-    ai_response = await ask_ai_for_rules(chat_id, message.text)
-    
-    chat_data["draft"] = ai_response
-    save_chat(int(chat_id), chat_data)
-    
-    await message.answer(
-        f"🤖 <b>ИИ предлагает:</b>\n\n{ai_response}\n\n"
-        f"Что сделать?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Сохранить", callback_data=f"save_{chat_id}")],
-            [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{chat_id}")],
-            [InlineKeyboardButton(text="➕ Дописать", callback_data=f"append_{chat_id}")],
-        ]),
-        parse_mode="HTML"
-    )
 
 @dp.callback_query(F.data.startswith("save_"))
 async def cb_save(callback: CallbackQuery):
@@ -357,11 +495,9 @@ async def cb_save(callback: CallbackQuery):
     chat_id = callback.data.replace("save_", "")
     chat_data = get_chat(chat_id)
     if not chat_data:
-        await callback.message.answer("Чат не найден.")
         return
     
-    draft = chat_data.get("draft", "")
-    chat_data["rules"] = draft
+    chat_data["rules"] = chat_data.get("draft", "")
     chat_data.pop("draft", None)
     save_chat(int(chat_id), chat_data)
     
@@ -371,7 +507,7 @@ async def cb_save(callback: CallbackQuery):
         del users[key]
         save_json(USERS_FILE, users)
     
-    await callback.message.answer(f"✅ Правила для чата «{chat_data.get('title', 'Чат')}» сохранены!")
+    await callback.message.answer(f"✅ Правила сохранены!")
 
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cb_cancel(callback: CallbackQuery):
@@ -410,6 +546,7 @@ async def on_bot_added(event: ChatMemberUpdated):
     if member.status == "administrator":
         has_rights = member.can_delete_messages and member.can_restrict_members
     
+    # Новая группа — чистый лист
     save_chat(chat_id, {
         "title": chat_title,
         "owner_id": None,
@@ -420,6 +557,8 @@ async def on_bot_added(event: ChatMemberUpdated):
         "farewell": "👋 Пока, {name}.",
         "warn_limit": 3
     })
+    save_knowledge(chat_id, {"text": ""})
+    clear_history(chat_id)
     
     if has_rights:
         await bot.send_message(
@@ -467,7 +606,7 @@ async def cb_bind_chat(callback: CallbackQuery):
         await bot.send_message(
             callback.from_user.id,
             f"✅ <b>Чат «{chat_data.get('title', 'Чат')}» привязан!</b>\n\n"
-            f"Теперь напиши мне правила модерации для этого чата.",
+            f"Напиши мне правила модерации для этого чата.",
             parse_mode="HTML"
         )
     except:
@@ -535,7 +674,10 @@ async def moderate_message(message: Message):
     if not text:
         return
 
-    result = await check_message_ai(text, rules)
+    knowledge = get_knowledge(chat_id)
+    ktext = knowledge.get("text", "")
+
+    result = await check_message_ai(text, rules, ktext)
     action = result.get("action", "none")
     reason = result.get("reason", "нарушение")
     warn_limit = chat_data.get("warn_limit", 3)
@@ -581,8 +723,29 @@ async def moderate_message(message: Message):
 
 @dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def moderate_group_message(message: Message):
+    # /ии
+    if message.text and message.text.lower().startswith("/ии"):
+        query = message.text[3:].strip()
+        if not query:
+            await message.reply("Привет! Давай поговорим. Что тебя интересует?")
+            return
+        response = await ai_chat(message.chat.id, query, message.from_user.first_name)
+        await message.reply(response)
+        return
+    
+    # /поговори
+    if message.text and message.text.lower().startswith("/поговори"):
+        query = message.text[8:].strip()
+        if not query:
+            await message.reply("Давай поговорим! О чём хочешь поговорить?")
+            return
+        response = await ai_chat(message.chat.id, query, message.from_user.first_name)
+        await message.reply(response)
+        return
+    
     if message.text and message.text.startswith("/"):
         return
+    
     await moderate_message(message)
 
 @dp.message(F.text.lower().in_({"правила", "/правила"}))
@@ -593,33 +756,33 @@ async def cmd_rules(message: Message):
     else:
         await message.reply("Правила ещё не настроены.")
 
+@dp.message(Command("help"))
+async def cmd_help(message: Message):
+    await message.reply(
+        "📋 <b>Команды:</b>\n\n"
+        "/правила — показать правила\n"
+        "/ии [вопрос] — поговорить с ИИ\n"
+        "/поговори [вопрос] — то же самое\n"
+        "/mute — замутить (реплай)\n"
+        "/unmute — размутить (реплай)\n"
+        "/ban — забанить (реплай)",
+        parse_mode="HTML"
+    )
+
 @dp.message(Command("mute"))
 async def cmd_mute(message: Message):
-    if message.chat.type not in ("group", "supergroup"):
-        await message.reply("Мут работает только в группах и супергруппах.")
-        return
-    
     if not message.reply_to_message:
         await message.reply("Ответь на сообщение пользователя.")
         return
-    
     user_id = message.reply_to_message.from_user.id
-    args = message.text.split()
-    minutes = 60
-    if len(args) > 1:
-        try:
-            minutes = int(args[1])
-        except:
-            pass
-    
     try:
         await bot.restrict_chat_member(
             chat_id=message.chat.id,
             user_id=user_id,
             permissions=types.ChatPermissions(can_send_messages=False),
-            until_date=timedelta(minutes=minutes)
+            until_date=timedelta(minutes=60)
         )
-        await message.reply(f"🔇 @{message.reply_to_message.from_user.username} замучен на {minutes} минут.")
+        await message.reply(f"🔇 @{message.reply_to_message.from_user.username} замучен на 60 минут.")
     except Exception as e:
         await message.reply(f"Ошибка: {e}")
 
@@ -628,7 +791,6 @@ async def cmd_unmute(message: Message):
     if not message.reply_to_message:
         await message.reply("Ответь на сообщение пользователя.")
         return
-    
     user_id = message.reply_to_message.from_user.id
     try:
         await bot.restrict_chat_member(
