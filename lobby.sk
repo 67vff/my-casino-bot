@@ -1,21 +1,21 @@
-# 1. Автоматический телепорт в рандом при ПЕРВОМ входе на сервер
-on first join:
-    # Ждем 3 секунды, чтобы AuthMe успел пропустить игрока
-    wait 3 seconds
-    
-    # Проверяем, что это не админ (чтобы вас не кидало с спавна)
-    if player doesn't have permission "admin.tp":
-        execute console command "tpr %player%"
-        send "&aДобро пожаловать на Выживание! Вы телепортированы в случайное место." to player
-
-# 2. Команда /rtp для ручного телепорта в рандом
-command /rtp:
+# Команда для установки спавна (только для админов)
+command /setspawn:
+    permission: skript.admin
     trigger:
-        # Отправляем сообщение игроку
-        send "&aИщем безопасное место для телепортации..." to player
-        # Ждем 1 секунду, чтобы сообщение отправилось
-        wait 1 second
-        # Выполняем команду tpr от имени консоли (чтобы обойти возможные ограничения)
-        execute console command "tpr %player%"
-        # Сообщение об успехе
-        send "&aВы успешно телепортированы в случайное место!" to player
+        set {lobby_spawn} to location of player
+        send "&aТочка спавна на Лобби успешно установлена!" to player
+
+# Команда для телепорта на спавн
+command /spawn:
+    trigger:
+        if {lobby_spawn} is set:
+            teleport player to {lobby_spawn}
+            send "&aВы телепортированы на спавн." to player
+        else:
+            send "&cСпавн еще не установлен!" to player
+
+# Автоматический телепорт на спавн при входе
+on join:
+    wait 1 second
+    if {lobby_spawn} is set:
+        teleport player to {lobby_spawn}
