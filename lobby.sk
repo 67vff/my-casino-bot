@@ -2,6 +2,6 @@ command /rtp:
     trigger:
         send "&aИщем безопасное место..." to player
         wait 1 second
-        # Выполняем встроенную команду Essentials для рандомного ТП
-        execute console command "tpr %player%"
+        # Добавили название мира "world" перед ником игрока
+        execute console command "tpr world %player%"
         send "&aВы успешно телепортированы в случайное место!" to player
