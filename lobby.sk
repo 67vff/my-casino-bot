@@ -1,22 +1,21 @@
-# 1. Запрет на выбрасывание предметов
-on drop:
-    cancel event
-    send "&cНа Лобби нельзя выбрасывать предметы!" to player
+# 1. Автоматический телепорт в рандом при ПЕРВОМ входе на сервер
+on first join:
+    # Ждем 3 секунды, чтобы AuthMe успел пропустить игрока
+    wait 3 seconds
+    
+    # Проверяем, что это не админ (чтобы вас не кидало с спавна)
+    if player doesn't have permission "admin.tp":
+        execute console command "tpr %player%"
+        send "&aДобро пожаловать на Выживание! Вы телепортированы в случайное место." to player
 
-# 2. Запрет на ломание блоков
-on break:
-    if player doesn't have permission "lobby.build":
-        cancel event
-        send "&cВы не можете ломать блоки на Лобби!" to player
-
-# 3. Запрет на установку блоков
-on place:
-    if player doesn't have permission "lobby.build":
-        cancel event
-        send "&cВы не можете ставить блоки на Лобби!" to player
-
-# 4. Команда /rtp для перехода на Выживание
+# 2. Команда /rtp для ручного телепорта в рандом
 command /rtp:
     trigger:
-        send "&aОтправляем вас на Выживание..." to player
-        execute player command "server Makakawo777"
+        # Отправляем сообщение игроку
+        send "&aИщем безопасное место для телепортации..." to player
+        # Ждем 1 секунду, чтобы сообщение отправилось
+        wait 1 second
+        # Выполняем команду tpr от имени консоли (чтобы обойти возможные ограничения)
+        execute console command "tpr %player%"
+        # Сообщение об успехе
+        send "&aВы успешно телепортированы в случайное место!" to player
