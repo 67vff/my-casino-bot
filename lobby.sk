@@ -1,5 +1,10 @@
+# 1. Команда /spawn (телепорт на спавн)
+command /spawn:
+    trigger:
+        execute console command "essentials:spawn %player%"
+        send "&aВы телепортированы на спавн!" to player
 
-# 1. Команда /rtp для всех игроков (телепорт в рандом)
+# 2. Команда /rtp (телепорт в рандом)
 command /rtp:
     trigger:
         send "&aИщем безопасное место..." to player
@@ -7,13 +12,13 @@ command /rtp:
         execute console command "tpr %player%"
         send "&aВы телепортированы в случайное место!" to player
 
-# 2. Автоматический телепорт в рандом при первом входе
+# 3. Автоматический телепорт в рандом при первом входе (если нужно)
 on first join:
     wait 3 seconds
     if player doesn't have permission "admin.tp":
         execute console command "tpr %player%"
 
-# 3. Команда выдачи предметов (только для админов)
+# 4. Команда выдачи предметов (для админов)
 command /giveitem <text> [<number>]:
     permission: server.give
     trigger:
