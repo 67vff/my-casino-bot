@@ -1,19 +1,34 @@
-# 1. Телепорт на спавн (если вы установили его через /setspawn)
+# 1. Телепорт на спавн при входе
+on join:
+    wait 2 seconds
+    teleport player to location(-2, 140, 25, world "world")
+    send "&aДобро пожаловать на Лобби!" to player
+
+# 2. Команда /spawn (возврат на спавн)
 command /spawn:
     trigger:
-        execute console command "essentials:spawn %player%"
+        teleport player to location(-2, 140, 25, world "world")
         send "&aВы телепортированы на спавн!" to player
 
-# 2. Команда /rtp (случайный телепорт)
+# 3. Команда /rtp (переход на Выживание)
 command /rtp:
     trigger:
-        send "&aИщем безопасное место..." to player
-        wait 1 second
-        execute console command "tpr %player%"
-        send "&aВы телепортированы в случайное место!" to player
+        send "&aОтправляем вас на Выживание..." to player
+        execute player command "server Makakawo777"
 
-# 3. Автоматический телепорт в рандом при первом входе (чтобы не падали на спавн)
-on first join:
-    wait 3 seconds
-    if player doesn't have permission "admin.tp":
-        execute console command "tpr %player%"
+# 4. Запрет на выброс вещей
+on drop:
+    cancel event
+    send "&cНа Лобби нельзя выбрасывать предметы!" to player
+
+# 5. Запрет на ломание блоков (для игроков без прав)
+on break:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ломать блоки на Лобби!" to player
+
+# 6. Запрет на установку блоков (для игроков без прав)
+on place:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ставить блоки на Лобби!" to player
