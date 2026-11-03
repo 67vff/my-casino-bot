@@ -1,26 +1,41 @@
-# 1. Команда /spawn (телепорт на спавн)
+# 1. Телепорт на спавн при входе
+on join:
+    wait 2 seconds
+    teleport player to location(-2, 140, 25, world "world")
+    send "&aДобро пожаловать на Лобби!" to player
+
+# 2. Команда /spawn (телепорт на спавн)
 command /spawn:
     trigger:
-        execute console command "essentials:spawn %player%"
+        teleport player to location(-2, 140, 25, world "world")
         send "&aВы телепортированы на спавн!" to player
 
-# 2. Команда /rtp (телепорт в рандом)
+# 3. Команда /rtp (переход на Выживание)
 command /rtp:
     trigger:
-        send "&aИщем безопасное место..." to player
-        wait 1 second
-        execute console command "tpr %player%"
-        send "&aВы телепортированы в случайное место!" to player
+        send "&aОтправляем вас на Выживание..." to player
+        execute player command "server Makakawo777"
 
-# 3. Автоматический телепорт в рандом при первом входе (если нужно)
-on first join:
-    wait 3 seconds
-    if player doesn't have permission "admin.tp":
-        execute console command "tpr %player%"
+# 4. Запрет на выброс вещей
+on drop:
+    cancel event
+    send "&cНа Лобби нельзя выбрасывать предметы!" to player
 
-# 4. Команда выдачи предметов (для админов)
+# 5. Запрет на ломание блоков (для обычных игроков)
+on break:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ломать блоки на Лобби!" to player
+
+# 6. Запрет на установку блоков (для обычных игроков)
+on place:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ставить блоки на Лобби!" to player
+
+# 7. Команда выдачи предметов (только для админов)
 command /giveitem <text> [<number>]:
-    permission: server.give
+    permission: lobby.give
     trigger:
         give <number> of <text> to player
         send "&aВыдан предмет: &e%<text>% &aв количестве: &e%<number>%" to player
