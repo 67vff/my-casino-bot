@@ -1,0 +1,22 @@
+# 1. Запрет на выбрасывание предметов
+on drop:
+    cancel event
+    send "&cНа Лобби нельзя выбрасывать предметы!" to player
+
+# 2. Запрет на ломание блоков
+on break:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ломать блоки на Лобби!" to player
+
+# 3. Запрет на установку блоков
+on place:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ставить блоки на Лобби!" to player
+
+# 4. Команда /rtp для перехода на Выживание
+command /rtp:
+    trigger:
+        send "&aОтправляем вас на Выживание..." to player
+        execute player command "server Makakawo777"
