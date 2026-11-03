@@ -1,21 +1,40 @@
-# Команда для установки спавна (только для админов)
-command /setspawn:
-    permission: skript.admin
-    trigger:
-        set {lobby_spawn} to location of player
-        send "&aТочка спавна на Лобби успешно установлена!" to player
-
-# Команда для телепорта на спавн
-command /spawn:
-    trigger:
-        if {lobby_spawn} is set:
-            teleport player to {lobby_spawn}
-            send "&aВы телепортированы на спавн." to player
-        else:
-            send "&cСпавн еще не установлен!" to player
-
-# Автоматический телепорт на спавн при входе
+# 1. Телепорт на спавн при входе (координаты -2 140 25)
 on join:
-    wait 1 second
-    if {lobby_spawn} is set:
-        teleport player to {lobby_spawn}
+    wait 2 seconds
+    teleport player to location(-2, 140, 25, world "world")
+    send "&aДобро пожаловать на Лобби!" to player
+
+# 2. Запрет на уход со спавна (принудительное возвращение)
+on move:
+    # Если игрок находится в мире "world" (Лобби)
+    if world of player is "world":
+        # Получаем текущее местоположение игрока
+        set {_loc} to location of player
+        # Центр спавна (ваши координаты)
+        set {_spawn} to location(-2, 140, 25, world "world")
+        # Если игрок отошел от спавна дальше, чем на 10 блоков (по горизонтали) или упал ниже 130
+        if distance between {_loc} and {_spawn} is greater than 10:
+            teleport player to {_spawn}
+            send "&cВы не можете покинуть спавн! Используйте /rtp, чтобы начать играть." to player
+
+# 3. Запрет на ломание и установку блоков (для обычных игроков)
+on break:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ломать блоки на Лобби!" to player
+
+on place:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ставить блоки на Лобби!" to player
+
+# 4. Команда /rtp для перехода на Выживание
+command /rtp:
+    trigger:
+        send "&aОтправляем вас на Выживание..." to player
+        execute player command "server Makakawo777"
+
+# 5. Запрет на выбрасывание предметов (Q)
+on drop:
+    cancel event
+    send "&cНа Лобби нельзя выбрасывать предметы!" to player
