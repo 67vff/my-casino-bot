@@ -1,40 +1,28 @@
-# 1. Телепорт на спавн при входе (координаты -2 140 25)
+# 1. Телепорт на спавн при входе
 on join:
     wait 2 seconds
     teleport player to location(-2, 140, 25, world "world")
     send "&aДобро пожаловать на Лобби!" to player
 
-# 2. Запрет на уход со спавна (принудительное возвращение)
-on move:
-    # Если игрок находится в мире "world" (Лобби)
-    if world of player is "world":
-        # Получаем текущее местоположение игрока
-        set {_loc} to location of player
-        # Центр спавна (ваши координаты)
-        set {_spawn} to location(-2, 140, 25, world "world")
-        # Если игрок отошел от спавна дальше, чем на 10 блоков (по горизонтали) или упал ниже 130
-        if distance between {_loc} and {_spawn} is greater than 10:
-            teleport player to {_spawn}
-            send "&cВы не можете покинуть спавн! Используйте /rtp, чтобы начать играть." to player
-
-# 3. Запрет на ломание и установку блоков (для обычных игроков)
-on break:
-    if player doesn't have permission "lobby.build":
-        cancel event
-        send "&cВы не можете ломать блоки на Лобби!" to player
-
-on place:
-    if player doesn't have permission "lobby.build":
-        cancel event
-        send "&cВы не можете ставить блоки на Лобби!" to player
-
-# 4. Команда /rtp для перехода на Выживание
+# 2. Команда /rtp (переход на Выживание)
 command /rtp:
     trigger:
         send "&aОтправляем вас на Выживание..." to player
         execute player command "server Makakawo777"
 
-# 5. Запрет на выбрасывание предметов (Q)
+# 3. Запрет на выброс вещей
 on drop:
     cancel event
     send "&cНа Лобби нельзя выбрасывать предметы!" to player
+
+# 4. Запрет на ломание блоков
+on break:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ломать блоки на Лобби!" to player
+
+# 5. Запрет на установку блоков
+on place:
+    if player doesn't have permission "lobby.build":
+        cancel event
+        send "&cВы не можете ставить блоки на Лобби!" to player
