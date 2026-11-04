@@ -1,0 +1,15 @@
+command /rtp:
+    description: Телепортирует на Выживание и кидает в рандом
+    trigger:
+        send "&aВы отправляетесь на Выживание..." to player
+        
+        # Отправляем игрока на сервер Выживание (ID: makakawo777-world)
+        send player to server "makakawo777-world"
+        
+        # Ждем 4 секунды, чтобы сервер прогрузил игрока
+        wait 4 seconds
+        
+        # Выполняем команду рандомного телепорта от лица игрока
+        # (он уже на Выживании, поэтому tpr сработает там)
+        execute player command "tpr"
+        send "&aПоиск безопасного места..." to player
