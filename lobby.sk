@@ -1,5 +1,11 @@
 command /rtp:
     trigger:
         send "&aОтправляем вас на Выживание..." to player
-        # ID вашего сервера в Velocity (как вы написали)
+        # Перекидываем на сервер
         execute player command "server makakawo777-world"
+        
+        # Ждем 4 секунды, чтобы сервер Выживание прогрузил игрока
+        wait 4 seconds
+        
+        # Отправляем команду tpr от лица игрока (она сработает уже на Выживании)
+        execute player command "tpr"
