@@ -1,7 +1,0 @@
-command /rtp:
-    trigger:
-        send "&aИщем безопасное место..." to player
-        wait 1 second
-        # Добавили название мира "world" перед ником игрока
-        execute console command "tpr world %player%"
-        send "&aВы успешно телепортированы в случайное место!" to player

@@ -1,0 +1,113 @@
+# Команда для запуска переименования
+command /renameme:
+    permission: skript.admin
+    trigger:
+        if player's tool is air:
+            send "&cВозьмите предмет в руку!" to player
+            stop
+        
+        set {rename::item::%player's uuid%} to player's tool
+        set {rename::stage::%player's uuid%} to 1
+        
+        send "&8&m--------------------------------" to player
+        send "&eВведите в чат желаемое название предмета (или напишите &ccancel&e для отмены):" to player
+        send "&8&m--------------------------------" to player
+        stop
+
+# Ловим сообщение игрока с названием
+on chat:
+    if {rename::stage::%player's uuid%} is 1:
+        cancel event
+        
+        if message is "cancel":
+            delete {rename::stage::%player's uuid%}
+            delete {rename::item::%player's uuid%}
+            send "&cПереименование отменено." to player
+            stop
+        
+        set {rename::text::%player's uuid%} to message
+        set {rename::stage::%player's uuid%} to 2
+        
+        send "&8&m--------------------------------" to player
+        send "&aНазвание сохранено: &f%message%" to player
+        send "&eТеперь выберите цвет цифрой:" to player
+        send "&f1. &cКрасный" to player
+        send "&f2. &6Золотой (желтый)" to player
+        send "&f3. &aЗеленый" to player
+        send "&f4. &bГолубой" to player
+        send "&f5. &dРозовый" to player
+        send "&f6. &5Фиолетовый" to player
+        send "&f7. &fБелый" to player
+        send "&f8. &7Серый" to player
+        send "&8&m--------------------------------" to player
+        stop
+
+# Ловим выбор цвета и делаем предмет
+on chat:
+    if {rename::stage::%player's uuid%} is 2:
+        cancel event
+        
+        set {_color} to "&f"
+        if message is "1":
+            set {_color} to "&c"
+        else if message is "2":
+            set {_color} to "&6"
+        else if message is "3":
+            set {_color} to "&a"
+        else if message is "4":
+            set {_color} to "&b"
+        else if message is "5":
+            set {_color} to "&d"
+        else if message is "6":
+            set {_color} to "&5"
+        else if message is "7":
+            set {_color} to "&f"
+        else if message is "8":
+            set {_color} to "&7"
+        else:
+            send "&cНеверный цвет. Введите цифру от 1 до 8:" to player
+            stop
+        
+        set {rename::color::%player's uuid%} to {_color}
+        set {rename::stage::%player's uuid%} to 3
+        
+        send "&8&m--------------------------------" to player
+        send "&eЦвет выбран. Теперь выберите жирность:" to player
+        send "&f1. &lЖирный" to player
+        send "&f2. Обычный" to player
+        send "&8&m--------------------------------" to player
+        stop
+
+# Ловим выбор жирности и выдаем предмет
+on chat:
+    if {rename::stage::%player's uuid%} is 3:
+        cancel event
+        
+        set {_bold} to ""
+        if message is "1":
+            set {_bold} to "&l"
+        else if message is "2":
+            set {_bold} to ""
+        else:
+            send "&cВведите 1 (жирный) или 2 (обычный):" to player
+            stop
+        
+        # Собираем финальное название
+        set {_finalName} to "%{rename::color::%player's uuid%}%%{_bold}%%{rename::text::%player's uuid%}%"
+        
+        # Меняем имя предмету
+        set name of {rename::item::%player's uuid%} to {_finalName}
+        
+        # Выдаем предмет обратно (заменяем тот, что в руке)
+        set player's tool to {rename::item::%player's uuid%}
+        
+        send "&8&m--------------------------------" to player
+        send "&aГотово! Предмет переименован в: %{_finalName}%" to player
+        send "&8&m--------------------------------" to player
+        
+        # Очищаем данные игрока
+        delete {rename::stage::%player's uuid%}
+        delete {rename::item::%player's uuid%}
+        delete {rename::text::%player's uuid%}
+        delete {rename::color::%player's uuid%}
+        stop
