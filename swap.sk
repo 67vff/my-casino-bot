@@ -1,0 +1,39 @@
+# ==========================================
+# Перенос зачарований между инструментами
+# ==========================================
+
+command /swapenchants:
+    permission: skript.admin
+    trigger:
+        # Получаем предмет из главной руки (тот, что держим)
+        set {_item1} to player's tool
+        
+        # Получаем предмет из второй руки (оффхенд)
+        set {_item2} to player's off hand tool
+        
+        # Проверка: в руках должны быть предметы
+        if {_item1} is air:
+            send "&cВозьмите инструмент (с которого снять чары) в главную руку!" to player
+            stop
+        if {_item2} is air:
+            send "&cВозьмите второй инструмент (на который наложить чары) во вторую руку!" to player
+            stop
+
+        # Проверка: это должны быть инструменты
+        if {_item1} is not a pickaxe, axe, shovel, hoe, sword, or shears:
+            send "&cПредмет в главной руке не является инструментом!" to player
+            stop
+        if {_item2} is not a pickaxe, axe, shovel, hoe, sword, or shears:
+            send "&cПредмет во второй руке не является инструментом!" to player
+            stop
+
+        # Копируем все зачарования с первого предмета на второй
+        # Если на втором предмете уже есть чары, они перезапишутся или объединятся
+        enchant {_item2} with all enchantments of {_item1}
+        
+        # Возвращаем предметы игроку
+        set player's tool to {_item2}
+        set player's off hand tool to {_item1}
+        
+        send "&aУспешно! Все зачарования перенесены с главной руки на вторую." to player
+        send "&7(Если на втором предмете были свои чары, они могли объединиться)" to player
