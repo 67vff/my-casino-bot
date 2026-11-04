@@ -1,0 +1,16 @@
+on join:
+    # Ждем 3 секунды, чтобы игрок прогрузился
+    wait 3 seconds
+    
+    # Проверяем наличие метки
+    if player has permission "rtp.pending":
+        # Удаляем метку
+        execute console command "lp user %player% permission unset rtp.pending"
+        
+        # Телепортируем в рандом
+        set {_world} to player's world
+        set {_randX} to random integer between -5000 and 5000
+        set {_randZ} to random integer between -5000 and 5000
+        
+        teleport player to location({_randX}, 200, {_randZ}, {_world})
+        send "&aВы телепортированы в случайное место!" to player
