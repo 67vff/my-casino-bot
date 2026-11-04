@@ -1,0 +1,20 @@
+command /rtp:
+    description: Телепортирует в случайное место
+    trigger:
+        # Центр карты (например, спавн Выживания)
+        set {_x} to 0
+        set {_z} to 0
+        
+        # Радиус поиска (5000 блоков)
+        set {_radius} to 5000
+        
+        # Генерируем случайные координаты
+        set {_randX} to random integer between ({_x} - {_radius}) and ({_x} + {_radius})
+        set {_randZ} to random integer between ({_z} - {_radius}) and ({_z} + {_radius})
+        
+        send "&eПоиск безопасного места..." to player
+        
+        # Телепортируем высоко в небо (на Y=200), чтобы игрок не застрял в блоках и упал на землю
+        teleport player to location({_randX}, 200, {_randZ}, world "world")
+        
+        send "&aВы телепортированы в случайное место! (X: %{_randX}%, Z: %{_randZ}%)" to player
