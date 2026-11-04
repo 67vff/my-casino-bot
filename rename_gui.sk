@@ -1,5 +1,5 @@
 # ==========================================
-# Продвинутое переименование предметов (Skript)
+# Поэтапное переименование предметов
 # ==========================================
 
 command /renameme:
@@ -12,7 +12,7 @@ command /renameme:
         set {rename::stage::%player's uuid%} to 1
         
         send "&8&m--------------------------------" to player
-        send "&eВведите в чат желаемое название предмета (или напишите &ccancel&e для отмены):" to player
+        send "&e[1/4] Введите в чат желаемое название предмета (или напишите &ccancel&e):" to player
         send "&8&m--------------------------------" to player
         stop
 
@@ -32,53 +32,22 @@ on chat:
         
         send "&8&m--------------------------------" to player
         send "&aНазвание сохранено: &f%message%" to player
-        send "&eВыберите шрифт цифрой (можно несколько через запятую, напр. 1,2):" to player
-        send "&f1. &lЖирный" to player
-        send "&f2. &oКурсив" to player
-        send "&f3. &nПодчеркнутый" to player
-        send "&f4. &mЗачеркнутый" to player
-        send "&f5. &kОбфусцированный (магия)" to player
-        send "&f6. Обычный (без шрифта)" to player
-        send "&8&m--------------------------------" to player
-        stop
-
-# --- ЭТАП 2: Ловим шрифт ---
-on chat:
-    if {rename::stage::%player's uuid%} is 2:
-        cancel event
-        
-        set {_font} to ""
-        if message contains "1":
-            set {_font} to "%{_font}%&l"
-        if message contains "2":
-            set {_font} to "%{_font}%&o"
-        if message contains "3":
-            set {_font} to "%{_font}%&n"
-        if message contains "4":
-            set {_font} to "%{_font}%&m"
-        if message contains "5":
-            set {_font} to "%{_font}%&k"
-        
-        set {rename::font::%player's uuid%} to {_font}
-        set {rename::stage::%player's uuid%} to 3
-        
-        send "&8&m--------------------------------" to player
-        send "&eШрифт выбран. Теперь выберите цвет цифрой:" to player
+        send "&e[2/4] Выберите цвет цифрой:" to player
         send "&f1. &cКрасный" to player
-        send "&f2. &6Золотой (желтый)" to player
+        send "&f2. &6Золотой" to player
         send "&f3. &aЗеленый" to player
         send "&f4. &bГолубой" to player
         send "&f5. &dРозовый" to player
         send "&f6. &5Фиолетовый" to player
         send "&f7. &fБелый" to player
         send "&f8. &7Серый" to player
-        send "&f9. &eЖелтый (как золото, но светлее)" to player
+        send "&f9. &eЖелтый" to player
         send "&8&m--------------------------------" to player
         stop
 
-# --- ЭТАП 3: Ловим цвет ---
+# --- ЭТАП 2: Ловим цвет ---
 on chat:
-    if {rename::stage::%player's uuid%} is 3:
+    if {rename::stage::%player's uuid%} is 2:
         cancel event
         
         set {_color} to "&f"
@@ -105,10 +74,10 @@ on chat:
             stop
         
         set {rename::color::%player's uuid%} to {_color}
-        set {rename::stage::%player's uuid%} to 4
+        set {rename::stage::%player's uuid%} to 3
         
         send "&8&m--------------------------------" to player
-        send "&eЦвет выбран. Теперь выберите иконку в конце названия:" to player
+        send "&e[3/4] Выберите иконку для конца названия:" to player
         send "&f1. Кирка (⛏)" to player
         send "&f2. Топор (🪓)" to player
         send "&f3. Лопата (🪏)" to player
@@ -122,9 +91,9 @@ on chat:
         send "&8&m--------------------------------" to player
         stop
 
-# --- ЭТАП 4: Ловим иконку и выдаем предмет ---
+# --- ЭТАП 3: Ловим иконку ---
 on chat:
-    if {rename::stage::%player's uuid%} is 4:
+    if {rename::stage::%player's uuid%} is 3:
         cancel event
         
         set {_icon} to ""
@@ -152,8 +121,44 @@ on chat:
             send "&cНеверная иконка. Введите цифру от 1 до 10:" to player
             stop
         
-        # Собираем финальное название
-        set {_finalName} to "%{rename::color::%player's uuid%}%%{rename::font::%player's uuid%}%%{rename::text::%player's uuid%}%%{_icon}%"
+        set {rename::icon::%player's uuid%} to {_icon}
+        set {rename::stage::%player's uuid%} to 4
+        
+        send "&8&m--------------------------------" to player
+        send "&e[4/4] Выберите шрифт цифрой:" to player
+        send "&f1. &lЖирный" to player
+        send "&f2. &oКурсив" to player
+        send "&f3. &nПодчеркнутый" to player
+        send "&f4. &mЗачеркнутый" to player
+        send "&f5. &kМагия (обфускация)" to player
+        send "&f6. Обычный" to player
+        send "&8&m--------------------------------" to player
+        stop
+
+# --- ЭТАП 4: Ловим шрифт и собираем предмет ---
+on chat:
+    if {rename::stage::%player's uuid%} is 4:
+        cancel event
+        
+        set {_font} to ""
+        if message is "1":
+            set {_font} to "&l"
+        else if message is "2":
+            set {_font} to "&o"
+        else if message is "3":
+            set {_font} to "&n"
+        else if message is "4":
+            set {_font} to "&m"
+        else if message is "5":
+            set {_font} to "&k"
+        else if message is "6":
+            set {_font} to ""
+        else:
+            send "&cНеверный шрифт. Введите цифру от 1 до 6:" to player
+            stop
+        
+        # Собираем финальное название: Цвет + Шрифт + Название + Иконка
+        set {_finalName} to "%{rename::color::%player's uuid%}%%{_font}%%{rename::text::%player's uuid%}%%{rename::icon::%player's uuid%}%"
         
         # Меняем имя предмету
         set name of {rename::item::%player's uuid%} to {_finalName}
@@ -165,10 +170,10 @@ on chat:
         send "&aГотово! Предмет переименован в: %{_finalName}%" to player
         send "&8&m--------------------------------" to player
         
-        # Очищаем данные
+        # Очищаем данные игрока
         delete {rename::stage::%player's uuid%}
         delete {rename::item::%player's uuid%}
         delete {rename::text::%player's uuid%}
         delete {rename::color::%player's uuid%}
-        delete {rename::font::%player's uuid%}
+        delete {rename::icon::%player's uuid%}
         stop
