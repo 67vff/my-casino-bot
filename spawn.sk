@@ -1,5 +1,6 @@
 command /spawn:
     description: Телепортирует на спавн
     trigger:
-        teleport player to location(86, 150, 14, world "world")
+        # Телепортируем на координаты и задаем поворот (yaw и pitch)
+        teleport player to location(86, 150, 14, world "world", -178.1, 1.6)
         send "&aВы телепортированы на спавн!" to player
