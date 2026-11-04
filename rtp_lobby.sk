@@ -1,0 +1,6 @@
+command /rtp:
+    description: Отправляет на Выживание
+    trigger:
+        send "&aОтправляем вас на Выживание..." to player
+        # Перекидываем на сервер Выживание
+        send player to server "makakawo777-world"
