@@ -2,5 +2,4 @@ command /rtp:
     description: Отправляет на Выживание
     trigger:
         send "&aОтправляем вас на Выживание..." to player
-        # Перекидываем на сервер Выживание (ID: makakawo777-world)
         send player to server "makakawo777-world"
