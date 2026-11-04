@@ -1,0 +1,5 @@
+command /spawn:
+    description: Телепортирует на спавн
+    trigger:
+        teleport player to location(86, 150, 14, world "world")
+        send "&aВы телепортированы на спавн!" to player
