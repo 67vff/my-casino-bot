@@ -1,0 +1,8 @@
+on join:
+    # Ждем, пока игрок прогрузится
+    wait 3 seconds
+    
+    # Проверяем: если у игрока нет права "admin.tp", то его телепортирует
+    if player does not have permission "admin.tp":
+        execute console command "tpr %player%"
+        send "&aВы телепортированы в случайное место на Выживании!" to player

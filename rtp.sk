@@ -1,5 +1,0 @@
-command /rtp:
-    trigger:
-        send "&aОтправляем вас на Выживание..." to player
-        # Отправляем игрока на сервер (команда прокси Velocity)
-        execute player command "server makakawo777-world"
