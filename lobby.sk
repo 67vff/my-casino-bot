@@ -1,0 +1,5 @@
+command /rtp:
+    trigger:
+        send "&aОтправляем вас на Выживание..." to player
+        # ID вашего сервера в Velocity (как вы написали)
+        execute player command "server makakawo777-world"
