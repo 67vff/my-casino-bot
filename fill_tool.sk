@@ -1,12 +1,12 @@
 # ==========================================
-# Заполнение зоны с подтверждением (ФИНАЛ)
+# Заполнение зоны (две ЛКМ)
 # ==========================================
 
 command /fill:
     permission: skript.admin
     trigger:
         send "&8&m--------------------------------" to player
-        send "&eВыберите блок (введите цифру):" to player
+        send "&eВыберите блок для заполнения (введите цифру):" to player
         send "&f1. Барьер (barrier)" to player
         send "&f2. Бедрок (bedrock)" to player
         send "&f3. Камень (stone)" to player
@@ -47,13 +47,15 @@ on chat:
                 
             if {_block} is set:
                 set {fill::block::%player's uuid%} to {_block}
+                delete {fill::pos1::%player's uuid%}
+                delete {fill::pos2::%player's uuid%}
                 
                 give 1 of wooden axe to player
                 set name of player's tool to "&e&lТопор заполнения"
                 
                 send "&aБлок выбран: %message%!" to player
-                send "&e1. Ударьте ЛКМ по блоку (низ)." to player
-                send "&e2. Ударьте ПКМ по блоку (верх)." to player
+                send "&e1. Ударьте ЛКМ по первому углу (низ)." to player
+                send "&e2. Ударьте ЛКМ по второму углу (верх)." to player
                 
                 set {fill::stage::%player's uuid%} to 2
                 stop
@@ -63,7 +65,6 @@ on chat:
             if message is "1":
                 send "&eЗаполнение..." to player
                 
-                # Берем координаты из сохраненных точек
                 set {_loc1} to {fill::pos1::%player's uuid%}
                 set {_loc2} to {fill::pos2::%player's uuid%}
                 
@@ -84,27 +85,24 @@ on chat:
                 send "&cОтменено." to player
             stop
 
-# --- ЛКМ (Ломание блока) ---
+# --- ЕДИНСТВЕННОЕ СОБЫТИЕ КЛИКА (ЛКМ) ---
 on block break:
     if name of player's tool is "&e&lТопор заполнения":
         if {fill::stage::%player's uuid%} is 2:
             cancel event
-            set {fill::pos1::%player's uuid%} to location of event-block
-            send "&aТочка 1 (низ) установлена. Жду ПКМ по второму углу." to player
-
-# --- ПКМ (Взаимодействие с блоком) ---
-on right click:
-    if name of player's tool is "&e&lТопор заполнения":
-        if {fill::stage::%player's uuid%} is 2:
-            if event-block is not air:
-                cancel event
+            
+            # Если Точка 1 еще не стоит — ставим её
+            if {fill::pos1::%player's uuid%} is not set:
+                set {fill::pos1::%player's uuid%} to location of event-block
+                send "&aТочка 1 (низ) установлена! Теперь ударьте ЛКМ по второму углу." to player
+                stop
+            
+            # Если Точка 1 уже стоит, а Точка 2 нет — ставим Точку 2 и спрашиваем
+            if {fill::pos2::%player's uuid%} is not set:
                 set {fill::pos2::%player's uuid%} to location of event-block
                 send "&aТочка 2 (верх) установлена." to player
                 
-                if {fill::pos1::%player's uuid%} is not set:
-                    send "&cСначала ударьте ЛКМ (Точка 1)!" to player
-                    stop
-                    
+                # Считаем объем
                 set {_x1} to x-coord of {fill::pos1::%player's uuid%}
                 set {_y1} to y-coord of {fill::pos1::%player's uuid%}
                 set {_z1} to z-coord of {fill::pos1::%player's uuid%}
