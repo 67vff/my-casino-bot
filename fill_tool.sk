@@ -1,41 +1,39 @@
 # ==========================================
-# Инструмент для заполнения зоны (как WorldEdit)
+# Заполнение зоны по координатам (без топора)
 # ==========================================
 
-# Переменные для хранения точек (у каждого игрока свои)
-# {fill::pos1::%player's uuid%} - первая точка
-# {fill::pos2::%player's uuid%} - вторая точка
-
-# Выдача топора (только для админов)
-command /filltool:
+command /pos1:
     permission: skript.admin
     trigger:
-        give 1 of wooden axe to player
-        set name of player's tool to "&e&lТопор заполнения"
-        send "&aВы получили топор для заполнения!" to player
+        # Берем блок, на который смотрит игрок
+        set {_target} to target block of player
+        if {_target} is air:
+            send "&cНаведитесь на блок!" to player
+            stop
+        
+        set {fill::pos1::%player's uuid%} to location of {_target}
+        send "&aТочка 1 (низ) установлена: &e%x-coord of {_target}%, %y-coord of {_target}%, %z-coord of {_target}%" to player
 
-# Обработка клика топором
-on left click with wooden axe:
-    if name of player's tool is "&e&lТопор заполнения":
-        cancel event
-        set {fill::pos1::%player's uuid%} to event-block's location
-        send "&aТочка 1 (низ) установлена: &e%event-block's x%, %event-block's y%, %event-block's z%" to player
+command /pos2:
+    permission: skript.admin
+    trigger:
+        # Берем блок, на который смотрит игрок
+        set {_target} to target block of player
+        if {_target} is air:
+            send "&cНаведитесь на блок!" to player
+            stop
+            
+        set {fill::pos2::%player's uuid%} to location of {_target}
+        send "&aТочка 2 (верх) установлена: &e%x-coord of {_target}%, %y-coord of {_target}%, %z-coord of {_target}%" to player
 
-on right click with wooden axe:
-    if name of player's tool is "&e&lТопор заполнения":
-        cancel event
-        set {fill::pos2::%player's uuid%} to event-block's location
-        send "&aТочка 2 (верх) установлена: &e%event-block's x%, %event-block's y%, %event-block's z%" to player
-
-# Команда для заполнения
-command /fill <block>:
+command /fill <string>:
     permission: skript.admin
     trigger:
         if {fill::pos1::%player's uuid%} is not set:
-            send "&cСначала установите Точку 1 (ЛКМ по блоку)!" to player
+            send "&cСначала установите Точку 1 командой /pos1 (наведитесь на блок)!" to player
             stop
         if {fill::pos2::%player's uuid%} is not set:
-            send "&cСначала установите Точку 2 (ПКМ по блоку)!" to player
+            send "&cСначала установите Точку 2 командой /pos2 (наведитесь на блок)!" to player
             stop
         
         # Проверка на размер (чтобы не залагать сервер)
@@ -47,7 +45,6 @@ command /fill <block>:
         set {_y2} to y-coord of {fill::pos2::%player's uuid%}
         set {_z2} to z-coord of {fill::pos2::%player's uuid%}
         
-        # Считаем объем (приблизительно)
         set {_dx} to abs({_x2} - {_x1}) + 1
         set {_dy} to abs({_y2} - {_y1}) + 1
         set {_dz} to abs({_z2} - {_z1}) + 1
@@ -57,10 +54,16 @@ command /fill <block>:
             send "&cЗона слишком большая! Максимум 10 000 блоков (сейчас %{_volume}%)" to player
             stop
         
-        # Заполняем
+        # Проверяем, существует ли такой блок
+        set {_blockType} to arg-1 parsed as block
+        if {_blockType} is not set:
+            send "&cБлок '&e%arg-1%&c' не найден! Проверьте название (например, stone, barrier, air)." to player
+            stop
+        
         send "&eЗаполнение зоны (%{_volume}% блоков)..." to player
         
+        # Заполняем
         loop blocks within {fill::pos1::%player's uuid%} to {fill::pos2::%player's uuid%}:
-            set loop-block to arg-1
+            set loop-block to {_blockType}
         
         send "&aГотово! Зона заполнена блоком &e%arg-1%" to player
