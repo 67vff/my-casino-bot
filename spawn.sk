@@ -1,6 +1,0 @@
-on respawn:
-    # Ждем 1 тик, чтобы сервер завершил процесс возрождения
-    wait 1 tick
-    # Телепортируем игрока на спавн мира, в котором он находится
-    teleport player to spawn of world of player
-    send "&aВы возродились на спавне!" to player
