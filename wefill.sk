@@ -1,12 +1,12 @@
 # ==========================================
-# Заполнение зоны (две ЛКМ, без ошибок)
+# Заполнение через WorldEdit (Топорик)
 # ==========================================
 
 command /fill:
     permission: skript.admin
     trigger:
         send "&8&m--------------------------------" to player
-        send "&eВыберите блок (введите цифру):" to player
+        send "&eВыберите блок для заполнения (введите цифру):" to player
         send "&f1. Барьер (barrier)" to player
         send "&f2. Бедрок (bedrock)" to player
         send "&f3. Камень (stone)" to player
@@ -36,15 +36,15 @@ on chat:
         if {fill::stage::%player's uuid%} is 1:
             set {_block} to none
             if message is "1":
-                set {_block} to barrier
+                set {_block} to "barrier"
             else if message is "2":
-                set {_block} to bedrock
+                set {_block} to "bedrock"
             else if message is "3":
-                set {_block} to stone
+                set {_block} to "stone"
             else if message is "4":
-                set {_block} to glass
+                set {_block} to "glass"
             else if message is "5":
-                set {_block} to air
+                set {_block} to "air"
             else:
                 send "&cНеверный выбор. Введите 1-5:" to player
                 stop
@@ -64,41 +64,10 @@ on chat:
                 send "&aБлок выбран: %message%!" to player
                 send "&e1. Ударьте ЛКМ по первому углу (низ)." to player
                 send "&e2. Ударьте ЛКМ по второму углу (верх)." to player
+                send "&e3. Скрипт сам выделит зону и заполнит её!" to player
                 
                 set {fill::stage::%player's uuid%} to 2
                 stop
-
-        # --- ЭТАП 3: Подтверждение ---
-        if {fill::stage::%player's uuid%} is 3:
-            if message is "1":
-                send "&eЗаполнение..." to player
-                
-                set {_loc1} to location({fill::x1::%player's uuid%}, {fill::y1::%player's uuid%}, {fill::z1::%player's uuid%}, player's world)
-                set {_loc2} to location({fill::x2::%player's uuid%}, {fill::y2::%player's uuid%}, {fill::z2::%player's uuid%}, player's world)
-                
-                loop blocks within {_loc1} to {_loc2}:
-                    set loop-block to {fill::block::%player's uuid%}
-                    
-                send "&aГотово!" to player
-                
-                delete {fill::stage::%player's uuid%}
-                delete {fill::x1::%player's uuid%}
-                delete {fill::y1::%player's uuid%}
-                delete {fill::z1::%player's uuid%}
-                delete {fill::x2::%player's uuid%}
-                delete {fill::y2::%player's uuid%}
-                delete {fill::z2::%player's uuid%}
-                
-            else if message is "2":
-                delete {fill::stage::%player's uuid%}
-                delete {fill::x1::%player's uuid%}
-                delete {fill::y1::%player's uuid%}
-                delete {fill::z1::%player's uuid%}
-                delete {fill::x2::%player's uuid%}
-                delete {fill::y2::%player's uuid%}
-                delete {fill::z2::%player's uuid%}
-                send "&cОтменено." to player
-            stop
 
 # --- ЛКМ (Ломание блока) ---
 on block break:
@@ -121,21 +90,23 @@ on block break:
                 set {fill::y2::%player's uuid%} to y-coord of event-block
                 set {fill::z2::%player's uuid%} to z-coord of event-block
                 
-                send "&aТочка 2 (верх) установлена." to player
+                send "&aТочка 2 (верх) установлена. Заполняем..." to player
                 
-                set {_vol} to (abs({fill::x2::%player's uuid%} - {fill::x1::%player's uuid%}) + 1) * (abs({fill::y2::%player's uuid%} - {fill::y1::%player's uuid%}) + 1) * (abs({fill::z2::%player's uuid%} - {fill::z1::%player's uuid%}) + 1)
+                # Отправляем команды WorldEdit от лица игрока
+                # 1. Выделяем точки
+                execute player command "//pos1 %{fill::x1::%player's uuid%}%,%{fill::y1::%player's uuid%}%,%{fill::z1::%player's uuid%}%"
+                execute player command "//pos2 %{fill::x2::%player's uuid%}%,%{fill::y2::%player's uuid%}%,%{fill::z2::%player's uuid%}%"
                 
-                if {_vol} > 10000:
-                    send "&cСлишком большая зона (%{_vol}%)." to player
-                    delete {fill::x1::%player's uuid%}
-                    delete {fill::y1::%player's uuid%}
-                    delete {fill::z1::%player's uuid%}
-                    delete {fill::x2::%player's uuid%}
-                    delete {fill::y2::%player's uuid%}
-                    delete {fill::z2::%player's uuid%}
-                    stop
+                # 2. Заполняем зону
+                execute player command "//set %{fill::block::%player's uuid%}%"
                 
-                set {fill::stage::%player's uuid%} to 3
-                send "&eЗона выделена (%{_vol}% блоков). Заполнить?" to player
-                send "&f1. Да" to player
-                send "&f2. Нет" to player
+                send "&aГотово! Зона заполнена." to player
+                
+                # Очищаем переменные (кроме выбранного блока, чтобы можно было сразу делать новые зоны)
+                delete {fill::stage::%player's uuid%}
+                delete {fill::x1::%player's uuid%}
+                delete {fill::y1::%player's uuid%}
+                delete {fill::z1::%player's uuid%}
+                delete {fill::x2::%player's uuid%}
+                delete {fill::y2::%player's uuid%}
+                delete {fill::z2::%player's uuid%}
