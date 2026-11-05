@@ -1,0 +1,66 @@
+# ==========================================
+# Инструмент для заполнения зоны (как WorldEdit)
+# ==========================================
+
+# Переменные для хранения точек (у каждого игрока свои)
+# {fill::pos1::%player's uuid%} - первая точка
+# {fill::pos2::%player's uuid%} - вторая точка
+
+# Выдача топора (только для админов)
+command /filltool:
+    permission: skript.admin
+    trigger:
+        give 1 of wooden axe to player
+        set name of player's tool to "&e&lТопор заполнения"
+        send "&aВы получили топор для заполнения!" to player
+
+# Обработка клика топором
+on left click with wooden axe:
+    if name of player's tool is "&e&lТопор заполнения":
+        cancel event
+        set {fill::pos1::%player's uuid%} to event-block's location
+        send "&aТочка 1 (низ) установлена: &e%event-block's x%, %event-block's y%, %event-block's z%" to player
+
+on right click with wooden axe:
+    if name of player's tool is "&e&lТопор заполнения":
+        cancel event
+        set {fill::pos2::%player's uuid%} to event-block's location
+        send "&aТочка 2 (верх) установлена: &e%event-block's x%, %event-block's y%, %event-block's z%" to player
+
+# Команда для заполнения
+command /fill <block>:
+    permission: skript.admin
+    trigger:
+        if {fill::pos1::%player's uuid%} is not set:
+            send "&cСначала установите Точку 1 (ЛКМ по блоку)!" to player
+            stop
+        if {fill::pos2::%player's uuid%} is not set:
+            send "&cСначала установите Точку 2 (ПКМ по блоку)!" to player
+            stop
+        
+        # Проверка на размер (чтобы не залагать сервер)
+        set {_x1} to x-coord of {fill::pos1::%player's uuid%}
+        set {_y1} to y-coord of {fill::pos1::%player's uuid%}
+        set {_z1} to z-coord of {fill::pos1::%player's uuid%}
+        
+        set {_x2} to x-coord of {fill::pos2::%player's uuid%}
+        set {_y2} to y-coord of {fill::pos2::%player's uuid%}
+        set {_z2} to z-coord of {fill::pos2::%player's uuid%}
+        
+        # Считаем объем (приблизительно)
+        set {_dx} to abs({_x2} - {_x1}) + 1
+        set {_dy} to abs({_y2} - {_y1}) + 1
+        set {_dz} to abs({_z2} - {_z1}) + 1
+        set {_volume} to {_dx} * {_dy} * {_dz}
+        
+        if {_volume} > 10000:
+            send "&cЗона слишком большая! Максимум 10 000 блоков (сейчас %{_volume}%)" to player
+            stop
+        
+        # Заполняем
+        send "&eЗаполнение зоны (%{_volume}% блоков)..." to player
+        
+        loop blocks within {fill::pos1::%player's uuid%} to {fill::pos2::%player's uuid%}:
+            set loop-block to arg-1
+        
+        send "&aГотово! Зона заполнена блоком &e%arg-1%" to player
