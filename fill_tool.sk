@@ -1,5 +1,5 @@
 # ==========================================
-# Заполнение зоны (две ЛКМ)
+# Заполнение зоны (две ЛКМ, финальная версия)
 # ==========================================
 
 command /fill:
@@ -65,57 +65,79 @@ on chat:
             if message is "1":
                 send "&eЗаполнение..." to player
                 
-                set {_loc1} to {fill::pos1::%player's uuid%}
-                set {_loc2} to {fill::pos2::%player's uuid%}
+                # Берем сохраненные координаты
+                set {_x1} to {fill::x1::%player's uuid%}
+                set {_y1} to {fill::y1::%player's uuid%}
+                set {_z1} to {fill::z1::%player's uuid%}
+                set {_x2} to {fill::x2::%player's uuid%}
+                set {_y2} to {fill::y2::%player's uuid%}
+                set {_z2} to {fill::z2::%player's uuid%}
                 
+                # Создаем локации прямо здесь
+                set {_loc1} to location({_x1}, {_y1}, {_z1}, player's world)
+                set {_loc2} to location({_x2}, {_y2}, {_z2}, player's world)
+                
+                # Заполняем
                 loop blocks within {_loc1} to {_loc2}:
                     set loop-block to {fill::block::%player's uuid%}
                     
                 send "&aГотово!" to player
                 
+                # Очищаем
                 delete {fill::stage::%player's uuid%}
-                delete {fill::pos1::%player's uuid%}
-                delete {fill::pos2::%player's uuid%}
+                delete {fill::x1::%player's uuid%}
+                delete {fill::y1::%player's uuid%}
+                delete {fill::z1::%player's uuid%}
+                delete {fill::x2::%player's uuid%}
+                delete {fill::y2::%player's uuid%}
+                delete {fill::z2::%player's uuid%}
                 delete {fill::block::%player's uuid%}
                 
             else if message is "2":
                 delete {fill::stage::%player's uuid%}
-                delete {fill::pos1::%player's uuid%}
-                delete {fill::pos2::%player's uuid%}
+                delete {fill::x1::%player's uuid%}
+                delete {fill::y1::%player's uuid%}
+                delete {fill::z1::%player's uuid%}
+                delete {fill::x2::%player's uuid%}
+                delete {fill::y2::%player's uuid%}
+                delete {fill::z2::%player's uuid%}
                 send "&cОтменено." to player
             stop
 
-# --- ЕДИНСТВЕННОЕ СОБЫТИЕ КЛИКА (ЛКМ) ---
+# --- ЛКМ (Ломание блока) ---
 on block break:
     if name of player's tool is "&e&lТопор заполнения":
         if {fill::stage::%player's uuid%} is 2:
             cancel event
             
             # Если Точка 1 еще не стоит — ставим её
-            if {fill::pos1::%player's uuid%} is not set:
-                set {fill::pos1::%player's uuid%} to location of event-block
+            if {fill::x1::%player's uuid%} is not set:
+                set {fill::x1::%player's uuid%} to x-coord of event-block
+                set {fill::y1::%player's uuid%} to y-coord of event-block
+                set {fill::z1::%player's uuid%} to z-coord of event-block
+                
                 send "&aТочка 1 (низ) установлена! Теперь ударьте ЛКМ по второму углу." to player
                 stop
             
-            # Если Точка 1 уже стоит, а Точка 2 нет — ставим Точку 2 и спрашиваем
-            if {fill::pos2::%player's uuid%} is not set:
-                set {fill::pos2::%player's uuid%} to location of event-block
+            # Если Точка 1 уже стоит, а Точка 2 нет — ставим Точку 2
+            if {fill::x2::%player's uuid%} is not set:
+                set {fill::x2::%player's uuid%} to x-coord of event-block
+                set {fill::y2::%player's uuid%} to y-coord of event-block
+                set {fill::z2::%player's uuid%} to z-coord of event-block
+                
                 send "&aТочка 2 (верх) установлена." to player
                 
                 # Считаем объем
-                set {_x1} to x-coord of {fill::pos1::%player's uuid%}
-                set {_y1} to y-coord of {fill::pos1::%player's uuid%}
-                set {_z1} to z-coord of {fill::pos1::%player's uuid%}
-                set {_x2} to x-coord of {fill::pos2::%player's uuid%}
-                set {_y2} to y-coord of {fill::pos2::%player's uuid%}
-                set {_z2} to z-coord of {fill::pos2::%player's uuid%}
-                
-                set {_vol} to (abs({_x2} - {_x1}) + 1) * (abs({_y2} - {_y1}) + 1) * (abs({_z2} - {_z1}) + 1)
+                set {_vol} to (abs({fill::x2::%player's uuid%} - {fill::x1::%player's uuid%}) + 1) * (abs({fill::y2::%player's uuid%} - {fill::y1::%player's uuid%}) + 1) * (abs({fill::z2::%player's uuid%} - {fill::z1::%player's uuid%}) + 1)
                 
                 if {_vol} > 10000:
                     send "&cСлишком большая зона (%{_vol}%)." to player
-                    delete {fill::pos1::%player's uuid%}
-                    delete {fill::pos2::%player's uuid%}
+                    delete {fill::x1::%player's uuid%}
+                    delete {fill::y1::%player's uuid%}
+                    delete {fill::z1::%player's uuid%}
+                    delete {fill::x2::%player's uuid%}
+                    delete {fill::y2::%player's uuid%}
+                    delete {fill::z2::%player's uuid%}
                     stop
                 
                 set {fill::stage::%player's uuid%} to 3
