@@ -1,0 +1,6 @@
+command /rtp:
+    description: Отправляет на Выживание
+    trigger:
+        send "&aОтправляем вас на Выживание..." to player
+        execute console command "lp user %player% permission settemp rtp.pending true 1m"
+        send player to server "lobbi-12"
