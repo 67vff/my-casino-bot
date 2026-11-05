@@ -1,0 +1,23 @@
+on join:
+    # Проверяем метку моментально (без ожидания)
+    if player has permission "rtp.pending":
+        # Удаляем метку сразу, чтобы больше не срабатывало
+        execute console command "lp user %player% permission unset rtp.pending"
+        
+        # Генерируем случайные координаты
+        set {_x} to random integer between -5000 and 5000
+        set {_z} to random integer between -5000 and 5000
+        
+        # Ищем безопасную высоту (от 320 вниз до земли)
+        set {_y} to 320
+        while {_y} > 0:
+            set {_loc} to location({_x}, {_y}, {_z}, player's world)
+            if block at {_loc} is not air and block at {_loc} is not water and block at {_loc} is not lava:
+                # Нашли землю! Телепортируем на 2 блока выше (чтобы не застрять в блоке)
+                set {_y} to {_y} + 2
+                stop loop
+            remove 1 from {_y}
+            
+        # Телепортируем
+        teleport player to location({_x}, {_y}, {_z}, player's world)
+        send "&aВы телепортированы в случайное место!" to player
