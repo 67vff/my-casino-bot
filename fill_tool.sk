@@ -1,176 +1,133 @@
 # ==========================================
-# Умное заполнение зоны (пошагово в чате)
+# Заполнение зоны с выбором блока в чате
 # ==========================================
+
+# Переменные для выбора блока
+# {fill::selected::%player's uuid%} - выбранный блок
 
 command /fill:
     permission: skript.admin
     trigger:
-        # Начинаем диалог
-        set {fill::stage::%player's uuid%} to 1
+        # Отправляем меню с выбором
+        send "&8&m--------------------------------" to player
+        send "&eВыберите блок для заполнения (введите цифру в чат):" to player
+        send "&f1. Барьер (barrier)" to player
+        send "&f2. Бедрок (bedrock)" to player
+        send "&f3. Камень (stone)" to player
+        send "&f4. Стекло (glass)" to player
+        send "&f5. Воздух (air)" to player
+        send "&8&m--------------------------------" to player
         
-        send "&8&m--------------------------------" to player
-        send "&e[1/7] Введите ID блока, которым нужно заполнить (например: &fstone&e, &fbarrier&e, &fair&e)." to player
-        send "&7(Чтобы отменить, напишите &ccancel&7)" to player
-        send "&8&m--------------------------------" to player
+        # Начинаем диалог выбора
+        set {fill::stage::%player's uuid%} to 1
+        stop
 
-# Ловим все сообщения игрока
+# Ловим сообщение игрока с цифрой
 on chat:
-    # Проверяем, участвует ли игрок в заполнении
-    if {fill::stage::%player's uuid%} is set:
+    # Проверяем, находится ли игрок на этапе выбора блока
+    if {fill::stage::%player's uuid%} is 1:
         cancel event
         
-        # Отмена
-        if message is "cancel":
-            delete {fill::stage::%player's uuid%}
-            send "&cЗаполнение отменено." to player
+        set {_block} to none
+        
+        # Проверяем, какую цифру ввели
+        if message is "1":
+            set {_block} to barrier
+        else if message is "2":
+            set {_block} to bedrock
+        else if message is "3":
+            set {_block} to stone
+        else if message is "4":
+            set {_block} to glass
+        else if message is "5":
+            set {_block} to air
+        else:
+            send "&cНеверный выбор! Введите цифру от 1 до 5 (или напишите 'cancel'):" to player
             stop
-
-        # ==========================================
-        # ЭТАП 1: Блок
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 1:
-            set {_block} to message parsed as block
-            if {_block} is not set:
-                send "&cОшибка: Блок '&e%message%&c' не найден. Введите правильный ID (например, stone):" to player
-                stop
             
+        # Если блок выбран успешно
+        if {_block} is set:
+            # Сохраняем блок
             set {fill::block::%player's uuid%} to {_block}
-            set {fill::stage::%player's uuid%} to 2
+            
+            # Выдаем топор
+            give 1 of wooden axe to player
+            set name of player's tool to "&e&lТопор заполнения"
             
             send "&8&m--------------------------------" to player
             send "&aБлок выбран: &e%message%" to player
-            send "&e[2/7] Введите координату &fX &eдля Угла 1 (от 1 до 10):" to player
-            send "&8&m--------------------------------" to player
-            stop
-
-        # ==========================================
-        # ЭТАП 2: X1
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 2:
-            if message is not a number:
-                send "&cОшибка: Введите число (цифру)!" to player
-                stop
-            
-            set {_num} to message parsed as number
-            if {_num} < 1 or {_num} > 10:
-                send "&cОшибка: Координата должна быть от 1 до 10!" to player
-                stop
-                
-            set {fill::x1::%player's uuid%} to {_num}
-            set {fill::stage::%player's uuid%} to 3
-            
-            send "&8&m--------------------------------" to player
-            send "&e[3/7] Введите координату &fY &eдля Угла 1:" to player
-            send "&8&m--------------------------------" to player
-            stop
-
-        # ==========================================
-        # ЭТАП 3: Y1
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 3:
-            if message is not a number:
-                send "&cОшибка: Введите число!" to player
-                stop
-            
-            set {fill::y1::%player's uuid%} to message parsed as number
-            set {fill::stage::%player's uuid%} to 4
-            
-            send "&8&m--------------------------------" to player
-            send "&e[4/7] Введите координату &fZ &eдля Угла 1:" to player
-            send "&8&m--------------------------------" to player
-            stop
-
-        # ==========================================
-        # ЭТАП 4: Z1
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 4:
-            if message is not a number:
-                send "&cОшибка: Введите число!" to player
-                stop
-            
-            set {fill::z1::%player's uuid%} to message parsed as number
-            set {fill::stage::%player's uuid%} to 5
-            
-            send "&8&m--------------------------------" to player
-            send "&e[5/7] Введите координату &fX &eдля Угла 2:" to player
-            send "&8&m--------------------------------" to player
-            stop
-
-        # ==========================================
-        # ЭТАП 5: X2
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 5:
-            if message is not a number:
-                send "&cОшибка: Введите число!" to player
-                stop
-            
-            set {fill::x2::%player's uuid%} to message parsed as number
-            set {fill::stage::%player's uuid%} to 6
-            
-            send "&8&m--------------------------------" to player
-            send "&e[6/7] Введите координату &fY &eдля Угла 2:" to player
-            send "&8&m--------------------------------" to player
-            stop
-
-        # ==========================================
-        # ЭТАП 6: Y2
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 6:
-            if message is not a number:
-                send "&cОшибка: Введите число!" to player
-                stop
-            
-            set {fill::y2::%player's uuid%} to message parsed as number
-            set {fill::stage::%player's uuid%} to 7
-            
-            send "&8&m--------------------------------" to player
-            send "&e[7/7] Введите координату &fZ &eдля Угла 2:" to player
-            send "&8&m--------------------------------" to player
-            stop
-
-        # ==========================================
-        # ЭТАП 7: Z2 и ФИНАЛ
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 7:
-            if message is not a number:
-                send "&cОшибка: Введите число!" to player
-                stop
-            
-            set {fill::z2::%player's uuid%} to message parsed as number
-            
-            # Собираем координаты
-            set {_loc1} to location({fill::x1::%player's uuid%}, {fill::y1::%player's uuid%}, {fill::z1::%player's uuid%}, player's world)
-            set {_loc2} to location({fill::x2::%player's uuid%}, {fill::y2::%player's uuid%}, {fill::z2::%player's uuid%}, player's world)
-            
-            # Проверка на объем
-            set {_dx} to abs({fill::x2::%player's uuid%} - {fill::x1::%player's uuid%}) + 1
-            set {_dy} to abs({fill::y2::%player's uuid%} - {fill::y1::%player's uuid%}) + 1
-            set {_dz} to abs({fill::z2::%player's uuid%} - {fill::z1::%player's uuid%}) + 1
-            set {_volume} to {_dx} * {_dy} * {_dz}
-            
-            if {_volume} > 10000:
-                send "&cЗона слишком большая (%{_volume}% блоков). Лимит: 10 000." to player
-                send "&7Процесс отменен." to player
-                delete {fill::stage::%player's uuid%}
-                stop
-            
-            send "&8&m--------------------------------" to player
-            send "&eЗаполнение... (%{_volume}% блоков)" to player
-            
-            # Заполняем
-            loop blocks within {_loc1} to {_loc2}:
-                set loop-block to {fill::block::%player's uuid%}
-            
-            send "&aГотово! Зона заполнена блоком &e%{fill::block::%player's uuid%}%" to player
+            send "&eИнструкция:" to player
+            send "&f1. &eУдарьте ЛКМ (левой кнопкой) по блоку — это будет &cниз&e." to player
+            send "&f2. &eУдарьте ПКМ (правой кнопкой) по блоку — это будет &aверх&e." to player
+            send "&f3. &eЗона заполнится автоматически!" to player
             send "&8&m--------------------------------" to player
             
-            # Очищаем данные
+            # Убираем метку выбора
             delete {fill::stage::%player's uuid%}
-            delete {fill::block::%player's uuid%}
-            delete {fill::x1::%player's uuid%}
-            delete {fill::y1::%player's uuid%}
-            delete {fill::z1::%player's uuid%}
-            delete {fill::x2::%player's uuid%}
-            delete {fill::y2::%player's uuid%}
-            delete {fill::z2::%player's uuid%}
             stop
+
+# ==========================================
+# Обработка клика топором
+# ==========================================
+
+# ЛКМ (низ)
+on left click with wooden axe:
+    if name of player's tool is "&e&lТопор заполнения":
+        cancel event
+        if {fill::block::%player's uuid%} is not set:
+            send "&cСначала выберите блок командой /fill!" to player
+            stop
+            
+        set {fill::pos1::%player's uuid%} to location of event-block
+        send "&aТочка 1 (низ) установлена: &e%x-coord of event-block%, %y-coord of event-block%, %z-coord of event-block%" to player
+        checkFill(player)
+
+# ПКМ (верх)
+on right click with wooden axe:
+    if name of player's tool is "&e&lТопор заполнения":
+        cancel event
+        if {fill::block::%player's uuid%} is not set:
+            send "&cСначала выберите блок командой /fill!" to player
+            stop
+            
+        set {fill::pos2::%player's uuid%} to location of event-block
+        send "&aТочка 2 (верх) установлена: &e%x-coord of event-block%, %y-coord of event-block%, %z-coord of event-block%" to player
+        checkFill(player)
+
+# ==========================================
+# Функция заполнения
+# ==========================================
+function checkFill(p: player):
+    if {fill::pos1::%{_p}'s uuid%} is set and {fill::pos2::%{_p}'s uuid%} is set:
+        # Считаем объем
+        set {_x1} to x-coord of {fill::pos1::%{_p}'s uuid%}
+        set {_y1} to y-coord of {fill::pos1::%{_p}'s uuid%}
+        set {_z1} to z-coord of {fill::pos1::%{_p}'s uuid%}
+        
+        set {_x2} to x-coord of {fill::pos2::%{_p}'s uuid%}
+        set {_y2} to y-coord of {fill::pos2::%{_p}'s uuid%}
+        set {_z2} to z-coord of {fill::pos2::%{_p}'s uuid%}
+        
+        set {_dx} to abs({_x2} - {_x1}) + 1
+        set {_dy} to abs({_y2} - {_y1}) + 1
+        set {_dz} to abs({_z2} - {_z1}) + 1
+        set {_volume} to {_dx} * {_dy} * {_dz}
+        
+        if {_volume} > 10000:
+            send "&cЗона слишком большая (%{_volume}% блоков). Лимит: 10 000." to {_p}
+            send "&7Сбросьте точки и попробуйте снова." to {_p}
+            delete {fill::pos1::%{_p}'s uuid%}
+            delete {fill::pos2::%{_p}'s uuid%}
+            stop
+        
+        send "&eЗаполнение зоны (%{_volume}% блоков)..." to {_p}
+        
+        # Заполняем
+        loop blocks within {fill::pos1::%{_p}'s uuid%} to {fill::pos2::%{_p}'s uuid%}:
+            set loop-block to {fill::block::%{_p}'s uuid%}
+            
+        send "&aГотово! Зона заполнена." to {_p}
+        
+        # Очищаем точки (но оставляем выбранный блок)
+        delete {fill::pos1::%{_p}'s uuid%}
+        delete {fill::pos2::%{_p}'s uuid%}
