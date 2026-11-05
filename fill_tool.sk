@@ -1,5 +1,5 @@
 # ==========================================
-# Заполнение зоны с подтверждением
+# Заполнение зоны с подтверждением (Исправлено)
 # ==========================================
 
 command /fill:
@@ -68,18 +68,10 @@ on chat:
                 stop
 
         # ==========================================
-        # ЭТАП 2: Ждем, пока игрок установит точки топором
-        # ==========================================
-        if {fill::stage::%player's uuid%} is 2:
-            send "&cИспользуйте топор, чтобы указать точки (или 'cancel'):" to player
-            stop
-
-        # ==========================================
         # ЭТАП 3: Подтверждение заполнения (1 - Да, 2 - Нет)
         # ==========================================
         if {fill::stage::%player's uuid%} is 3:
             if message is "1":
-                # Заполняем
                 send "&eЗаполнение зоны..." to player
                 
                 loop blocks within {fill::pos1::%player's uuid%} to {fill::pos2::%player's uuid%}:
@@ -103,53 +95,56 @@ on chat:
             stop
 
 # ==========================================
-# Обработка клика топором
+# Обработка кликов (ловим именно удары и клики по блокам)
 # ==========================================
 
-on left click with wooden axe:
+# ЛКМ по блоку (ломаем блок топором - но мы отменяем ломание и ставим точку)
+on block break:
     if name of player's tool is "&e&lТопор заполнения":
-        if {fill::stage::%player's uuid%} is not 2:
-            stop
-        cancel event
-        
-        set {fill::pos1::%player's uuid%} to location of event-block
-        send "&aТочка 1 (низ) установлена. Теперь ПКМ по второму углу." to player
+        if {fill::stage::%player's uuid%} is 2:
+            cancel event
+            set {fill::pos1::%player's uuid%} to location of event-block
+            send "&aТочка 1 (низ) установлена. Теперь ПКМ (правой кнопкой) по второму углу." to player
 
-on right click with wooden axe:
+# ПКМ по блоку (взаимодействие)
+on right click on block:
     if name of player's tool is "&e&lТопор заполнения":
-        if {fill::stage::%player's uuid%} is not 2:
-            stop
-        cancel event
-        
-        set {fill::pos2::%player's uuid%} to location of event-block
-        send "&aТочка 2 (верх) установлена." to player
-        
-        # Проверяем объем
-        set {_x1} to x-coord of {fill::pos1::%player's uuid%}
-        set {_y1} to y-coord of {fill::pos1::%player's uuid%}
-        set {_z1} to z-coord of {fill::pos1::%player's uuid%}
-        
-        set {_x2} to x-coord of {fill::pos2::%player's uuid%}
-        set {_y2} to y-coord of {fill::pos2::%player's uuid%}
-        set {_z2} to z-coord of {fill::pos2::%player's uuid%}
-        
-        set {_dx} to abs({_x2} - {_x1}) + 1
-        set {_dy} to abs({_y2} - {_y1}) + 1
-        set {_dz} to abs({_z2} - {_z1}) + 1
-        set {_volume} to {_dx} * {_dy} * {_dz}
-        
-        if {_volume} > 10000:
-            send "&cЗона слишком большая (%{_volume}% блоков). Лимит: 10 000." to player
-            delete {fill::pos1::%player's uuid%}
-            delete {fill::pos2::%player's uuid%}
-            stop
-        
-        # Переходим к этапу подтверждения
-        set {fill::stage::%player's uuid%} to 3
-        
-        send "&8&m--------------------------------" to player
-        send "&eЗона выделена. Блоков: &f%{_volume}%" to player
-        send "&eВы уверены, что хотите заполнить?" to player
-        send "&f1. &aДа, заполнить" to player
-        send "&f2. &cОтмена" to player
-        send "&8&m--------------------------------" to player
+        if {fill::stage::%player's uuid%} is 2:
+            cancel event
+            set {fill::pos2::%player's uuid%} to location of event-block
+            send "&aТочка 2 (верх) установлена." to player
+            
+            # Проверяем, что обе точки есть
+            if {fill::pos1::%player's uuid%} is not set:
+                send "&cВы не установили Точку 1 (ЛКМ)!" to player
+                stop
+            
+            # Проверяем объем
+            set {_x1} to x-coord of {fill::pos1::%player's uuid%}
+            set {_y1} to y-coord of {fill::pos1::%player's uuid%}
+            set {_z1} to z-coord of {fill::pos1::%player's uuid%}
+            
+            set {_x2} to x-coord of {fill::pos2::%player's uuid%}
+            set {_y2} to y-coord of {fill::pos2::%player's uuid%}
+            set {_z2} to z-coord of {fill::pos2::%player's uuid%}
+            
+            set {_dx} to abs({_x2} - {_x1}) + 1
+            set {_dy} to abs({_y2} - {_y1}) + 1
+            set {_dz} to abs({_z2} - {_z1}) + 1
+            set {_volume} to {_dx} * {_dy} * {_dz}
+            
+            if {_volume} > 10000:
+                send "&cЗона слишком большая (%{_volume}% блоков). Лимит: 10 000." to player
+                delete {fill::pos1::%player's uuid%}
+                delete {fill::pos2::%player's uuid%}
+                stop
+            
+            # Переходим к этапу подтверждения
+            set {fill::stage::%player's uuid%} to 3
+            
+            send "&8&m--------------------------------" to player
+            send "&eЗона выделена. Блоков: &f%{_volume}%" to player
+            send "&eВы уверены, что хотите заполнить?" to player
+            send "&f1. &aДа, заполнить" to player
+            send "&f2. &cОтмена" to player
+            send "&8&m--------------------------------" to player
