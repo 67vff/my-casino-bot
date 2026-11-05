@@ -1,8 +1,5 @@
 on join:
-    # Ждем 3 секунды, чтобы игрок прогрузился
-    wait 3 seconds
-    
-    # Проверяем наличие метки
+    # Проверяем наличие метки (без ожидания)
     if player has permission "rtp.pending":
         # Удаляем метку
         execute console command "lp user %player% permission unset rtp.pending"
