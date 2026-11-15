@@ -2,7 +2,7 @@ import logging
 import os
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 TELEGRAM_TOKEN = os.environ.get("BOT_TOKEN")
 MILLIDA_API_KEY = os.environ.get("MILLIDA_API_KEY")
@@ -11,7 +11,6 @@ API_BASE = "https://api.millida.net/v2/hosting/api"
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Отправка команды в консоль сервера через API Millida
 def send_console_command(command: str):
     if not MILLIDA_API_KEY: return False
     try:
@@ -25,37 +24,25 @@ def send_console_command(command: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет! Я бот для управления аккаунтом.\n\n"
-        "🔗 /link <ник> — привязать аккаунт к Telegram\n"
-        "После привязки вы сможете управлять аккаунтом через кнопки."
+        "🔗 Чтобы привязать аккаунт, зайдите в игру и введите `/link`.\n"
+        "Затем отправьте сюда код: `/confirm <код>`"
     )
 
-async def link_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def confirm_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Использование: /link <ник>")
+        await update.message.reply_text("Использование: /confirm <код>")
         return
-    nick = context.args[0]
+    
+    code = context.args[0]
     tg_id = update.effective_chat.id
     
-    # Отправляем команду в плагин для сохранения привязки
-    success = send_console_command(f"makauth link {nick} {tg_id}")
+    # Отправляем команду в консоль сервера, чтобы он привязал TG ID к нику по коду
+    success = send_console_command(f"makauth confirm {tg_id} {code}")
     
     if success:
-        # Создаем кнопки управления
-        keyboard = [
-            [InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block:{nick}")],
-            [InlineKeyboardButton("✅ Разблокировать", callback_data=f"unblock:{nick}")],
-            [InlineKeyboardButton("🔑 Сменить пароль", callback_data=f"changepass:{nick}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"✅ Аккаунт `{nick}` успешно привязан!\n\n"
-            f"Теперь вы можете управлять им с помощью кнопок ниже:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text("✅ Код принят! Если он верный, аккаунт привязан.")
     else:
-        await update.message.reply_text("❌ Ошибка связи с сервером. Попробуйте позже.")
+        await update.message.reply_text("❌ Неверный код или ошибка сервера.")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -67,7 +54,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if action == "block":
         if send_console_command(f"makauth block {nick}"):
-            await query.edit_message_text(f"🚫 Аккаунт `{nick}` заблокирован!\nПри следующем входе игрока кикнет.", parse_mode='Markdown')
+            await query.edit_message_text(f"🚫 Аккаунт `{nick}` заблокирован!", parse_mode='Markdown')
         else:
             await query.edit_message_text("❌ Ошибка блокировки.")
 
@@ -98,9 +85,9 @@ async def changepass(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("link", link_account))
+    app.add_handler(CommandHandler("confirm", confirm_code)) # Привязка по коду
     app.add_handler(CommandHandler("changepass", changepass))
-    app.add_handler(CallbackQueryHandler(button_handler)) # Обработчик кнопок
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling()
 
 if __name__ == '__main__':
