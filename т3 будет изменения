@@ -1,94 +1,35 @@
-import logging
-import os
-import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+проверил плагин нашёл несколько проблем скажи когда поправишь
 
-TELEGRAM_TOKEN = os.environ.get("BOT_TOKEN")
-MILLIDA_API_KEY = os.environ.get("MILLIDA_API_KEY")
-API_BASE = "https://api.millida.net/v2/hosting/api"
+1 в velocity в MakaCoreVelocity в onPluginMessage если сообщение пришло не от сервера а от игрока то оно не глушится и долетает до бэкенда через мод можно отправить BROADCAST и весь сервер увидит подделку и так же можно подделать CHAT_GLOBAL и TPA_REQUEST добавь там event.setResult(PluginMessageEvent.ForwardResult.handled()) в ветке где источник не ServerConnection
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+2 в TradeService монеты добавляются в обмен без проверки баланса игрок с нулём на счету может накликать сколько угодно и баланс уходит в минус сделай проверку баланса при клике и при исполнении обмена
 
-def send_console_command(command: str):
-    if not MILLIDA_API_KEY: return False
-    try:
-        headers = {"Authorization": f"Bearer {MILLIDA_API_KEY}", "Content-Type": "application/json"}
-        response = requests.post(f"{API_BASE}/command", headers=headers, json={"command": command}, timeout=10)
-        return response.status_code in [200, 201]
-    except Exception as e:
-        logger.error(f"Ошибка API: {e}")
-        return False
+3 в лобби giveCompass перезаписывает слот 0 а там лежит инвентарь игрока из синка он теряет вещи навсегда выдавай компас только в пустой слот
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Привет! Я бот для управления аккаунтом.\n\n"
-        "🔗 Чтобы привязать аккаунт, зайдите в игру и введите `/link`.\n"
-        "Затем отправьте сюда код: `/confirm <код>`"
-    )
+4 в TelegramService applyOrder пишет монеты прямо в базу но у игрока на сервере кэш PlayerData и любой сейв затирает заказ нужно после updateInt поправить поле в памяти через players.get
 
-async def confirm_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Использование: /confirm <код>")
-        return
-    
-    code = context.args[0]
-    tg_id = update.effective_chat.id
-    
-    # Отправляем команду в консоль сервера, чтобы он привязал TG ID к нику по коду
-    success = send_console_command(f"makauth confirm {tg_id} {code}")
-    
-    if success:
-        await update.message.reply_text("✅ Код принят! Если он верный, аккаунт привязан.")
-    else:
-        await update.message.reply_text("❌ Неверный код или ошибка сервера.")
+5 createLinkCode отправляет код привязки в общий чат телеграма любой кто там увидит код привяжет чужой аккаунт к себе шли код только игроку в игре
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data.split(":")
-    action = data[0]
-    nick = data[1]
-    
-    if action == "block":
-        if send_console_command(f"makauth block {nick}"):
-            await query.edit_message_text(f"🚫 Аккаунт `{nick}` заблокирован!", parse_mode='Markdown')
-        else:
-            await query.edit_message_text("❌ Ошибка блокировки.")
+6 checkIpLimit в CaptchaService инкрементируется при каждом входе а не при регистрации из за этого лимит 4 превращается в максимум 4 входа с айпи за день и игроки с одного провайдера улетят в бан считай только новые аккаунты
 
-    elif action == "unblock":
-        if send_console_command(f"makauth unblock {nick}"):
-            await query.edit_message_text(f"✅ Аккаунт `{nick}` разблокирован!", parse_mode='Markdown')
-        else:
-            await query.edit_message_text("❌ Ошибка разблокировки.")
+7 в KitService нет кулдауна на киты игрок открывает меню и получает предметы бесконечно используй таблицу kit_owned или добавь кулдаун
 
-    elif action == "changepass":
-        await query.edit_message_text(
-            f"🔑 Чтобы сменить пароль для `{nick}`, напишите:\n"
-            f"`/changepass {nick} старый_пароль новый_пароль`",
-            parse_mode='Markdown'
-        )
+8 во всех меню AdminService KitService ShopService RtpMenuService ServerMenuService CaseService клики проверяются по event.getSlot а не по getClickedInventory из за этого клик по своему инвентарю срабатывает как кнопка меню у админки это критично у кейсов тоже
 
-async def changepass(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 3:
-        await update.message.reply_text("Использование: /changepass <ник> <старый> <новый>")
-        return
-    nick, old, new = context.args
-    
-    if send_console_command(f"makauth changepass {nick} {old} {new}"):
-        await update.message.reply_text(f"✅ Команда на смену пароля для `{nick}` отправлена.", parse_mode='Markdown')
-    else:
-        await update.message.reply_text("❌ Ошибка связи с сервером.")
+9 чат не чистится от & и § игрок пишет &c&l ВЗЛОМ и весь чат красный убери коды перед подстановкой message
 
-def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("confirm", confirm_code)) # Привязка по коду
-    app.add_handler(CommandHandler("changepass", changepass))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.run_polling()
+10 на капче не блокируются команды игрок вводит /gm и дальше по списку заблокируй команды через PlayerCommandPreprocessEvent кроме /captcha
 
-if __name__ == '__main__':
-    main()
+11 генерация секрета в ps1 использует System.Random это не криптостойко замени на RandomNumberGenerator и ещё там переменная noBom нигде не объявлена скрипт упадёт на первом WriteAllText
+
+12 RtpMenu режимы near и far телепортируют в радиусе 50 900 блоков от игроков это инструмент чтобы искать чужие базы убери их или сделай радиус от 2000
+
+13 в магазине addItem возвращает остаток который не влез а он игнорируется игрок платит и теряет предметы
+
+14 packet-limiter в velocity.toml отключён поставь лимиты чтобы не было флуда и включи force-key-authentication и prevent-client-proxy-connections
+
+15 PlayerService load и save кидают IllegalStateException если база отвалится сервер будет падать на онджойне оберни в try и логируй
+
+16 в bot config пароль rcon test123 поставь длинный случайный
+
+и сделай явное объявление permissions в plugin.yml чтобы makacore.admin был по умолчанию false а то сейчас держится только на опах
