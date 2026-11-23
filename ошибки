@@ -1,390 +1,129 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""LEGO Mario -> зелёный. Запуск: ./go.sh"""
-
-import argparse
-import asyncio
-import json
-import struct
-import sys
-import time
-from collections import defaultdict
-from bleak import BleakScanner, BleakClient
-
-IDENTIFY = "f000ffc1-0451-4000-b000-000000000000"
-BLOCK    = "f000ffc2-0451-4000-b000-000000000000"
-STATUS   = "f000ffc4-0451-4000-b000-000000000000"
-EXTCTRL  = "f000ffc5-0451-4000-b000-000000000000"
-
-KNOWN = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x13]
-SILENT = [0x28]
-GREEN_CMDS = [0x10, 0x11, 0x13, 0x09, 0x06, 0x08, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x12, 0x14, 0x15]
-GREEN_PAY = [
-    b"\x00\xff\x00", b"\xff\x00\x00", b"\x00\x00\xff\x00", b"\x00\x00\xff\x00\xff",
-    b"\x01\x00\xff\x00", b"\x00\xff\x00\x00\xff", b"\x00\x00\xff", b"\xff\x00\x00\xff"
-]
-ST = {
-    0: "OK", 1: "CRC_ERR", 2: "FLASH_ERR", 3: "BUFFER_OFL", 4: "ALREADY_STARTED",
-    5: "NOT_STARTED", 6: "INCOMPLETE", 7: "BIM_CRC_ERR", 8: "BIM_FLASH_ERR",
-    9: "BIM_OFL", 10: "TIMEOUT", 12: "IMG_HDR_ERR", 13: "BIM_VERIFY_ERR"
-}
-
-def log(m=""):
-    print(m, flush=True)
-
-def crc16(d):
-    c = 0xFFFF
-    for b in d:
-        c ^= b << 8
-        for _ in range(8):
-            c = ((c << 1) ^ 0x1021) & 0xFFFF if c & 0x8000 else (c << 1) & 0xFFFF
-    return c
-
-def build_header(img, uid, tpl=None, len_value=None):
-    c = crc16(img)
-    h = bytearray(tpl) if tpl and len(tpl) >= 16 else bytearray(16)
-    h[0:2] = struct.pack("<H", c)
-    h[2:4] = struct.pack("<H", (~c) & 0xFFFF)
-    h[4] = 0x10
-    h[5] = (len_value if len_value is not None else len(img) // 4) & 0xFF
-    h[6:8] = b"\xff\xff"
-    h[8:12] = struct.pack("<I", uid & 0xFFFFFFFF)
-    h[12:14] = b"\x00\x00"
-    h[14] = 1
-    h[15] = 1
-    return bytes(h)
-
-def parse_header(h):
-    c0, c1, ver, ln, rfu, uid, addr, vld, typ = struct.unpack("<HHBBHIHBB", h[:16])
-    return dict(crc0=c0, crc1=c1, crc_ok=(c1 == (~c0) & 0xFFFF), ver=ver, len=ln,
-                uid=uid, vld=vld, typ=typ)
-
-class Mario:
-    def __init__(self, client, args):
-        self.c = client
-        self.a = args
-        self.props = {}
-        self.hdr = None
-        self.cur = "idle"
-        self.cnt = defaultdict(lambda: defaultdict(int))
-        self.total = self.supp = 0
-        self.dead = False
-        self.hdr_ev = asyncio.Event()
-        self.st_q = asyncio.Queue()
-        self.dump = {"ts": time.time(), "events": []}
-
-    def on_notify(self, sender, data):
-        raw = bytes(data)
-        u = sender.uuid.lower()
-        h = raw.hex(" ")
-        self.total += 1
-        self.dump["events"].append({"t": time.time(), "cmd": self.cur, "ch": u, "data": h})
-        n = self.cnt[self.cur][h]
-        self.cnt[self.cur][h] = n + 1
-        if n < self.a.spam_cap:
-            log(f"    [{u[:8]}] {h}")
-        else:
-            self.supp += 1
-        if u == STATUS and raw:
-            self.st_q.put_nowait(raw[0])
-        if u == IDENTIFY and self.hdr is None and len(raw) >= 16:
-            self.hdr = raw[:16]
-            self.hdr_ev.set()
-            log(f"    >>> ЗАГОЛОВОК: {raw[:16].hex(' ')}")
-
-    async def setup(self):
-        try:
-            for ch in self.c.services.characteristics.values():
-                self.props[ch.uuid.lower()] = list(ch.properties)
-        except Exception as e:
-            log(f"  Ошибка чтения GATT: {type(e).__name__}")
-        for u in (IDENTIFY, BLOCK, STATUS, EXTCTRL):
-            try:
-                await self.c.start_notify(u, self.on_notify)
-            except Exception as e:
-                log(f"  Подписка {u[:8]} не удалась: {type(e).__name__}")
-
-    async def w(self, u, data, response=None, timeout=6.0):
-        props = self.props.get(u.lower()) or []
-        resp = (True if "write" in props else False) if response is None else response
-        for r in ([resp, not resp] if response is None else [resp]):
-            try:
-                await asyncio.wait_for(self.c.write_gatt_char(u, data, response=r), timeout)
-                return True
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                msg = str(e).lower()
-                if any(s in msg for s in ("not connected", "disconnect", "peer removed")):
-                    self.dead = True
-                    return False
-                continue
-        return False
-
-    async def discover(self):
-        log("\n[1/6] Чтение GATT (характеристик)...")
-        for u, p in self.props.items():
-            log(f"  {u[:8]} props={p}")
-        w = self.props.get(IDENTIFY) or []
-        if not ("write" in w or "write-without-response" in w):
-            log("  !! ВНИМАНИЕ: ffc1 не пишется. Прошивку залить не выйдет, только менять цвет.")
-        if STATUS not in self.props:
-            log("  !! ВНИМАНИЕ: ffc4 нет. Статусы OAD не придут.")
-
-    async def probe(self):
-        log("\n[2/6] Зонд известных кодов...")
-        for cmd in KNOWN + SILENT:
-            if self.dead: return
-            self.cur = f"0x{cmd:02X}"
-            await self.w(EXTCTRL, bytes([cmd]))
-            await asyncio.sleep(self.a.delay)
-            got = self.cnt.get(self.cur) or {}
-            log(f"  0x{cmd:02X}: " + (" | ".join(f"{h}×{n}" for h, n in got.items()) or "тишина"))
-            await asyncio.sleep(self.a.delay)
-
-    async def sweep(self):
-        codes = [c for c in range(self.a.stop_at + 1) if c not in KNOWN and c not in SILENT]
-        log(f"\n[3/6] Перебор {len(codes)} кодов...")
-        good = []
-        for cmd in codes:
-            if self.dead: break
-            self.cur = f"0x{cmd:02X}"
-            await self.w(EXTCTRL, bytes([cmd]), timeout=3.0)
-            await asyncio.sleep(self.a.delay)
-            got = self.cnt.get(self.cur) or {}
-            if got and "ff" not in got:
-                good.append(cmd)
-                log(f"  0x{cmd:02X} ^ ОТВЕТ")
-            await asyncio.sleep(self.a.delay)
-        log("  Новые коды: " + (" ".join(f"0x{c:02X}" for c in good) if good else "нет"))
-
-    async def header(self):
-        log("\n[4/6] Чтение заголовка образа...")
-        try:
-            await asyncio.wait_for(self.hdr_ev.wait(), 6.0)
-        except asyncio.TimeoutError:
-            pass
-        if not self.hdr:
-            log("  Заголовок не пришёл.")
-            return False
-        p = parse_header(self.hdr)
-        log(f"  crc0={p['crc0']:04X} crc1={p['crc1']:04X} len={p['len']} uid={p['uid']:08X} typ={p['typ']}")
-        log(f"  crc_ok={p['crc_ok']}")
-        return p["crc_ok"]
-
-    async def green(self):
-        combos = [(c, p) for c in GREEN_CMDS for p in GREEN_PAY]
-        log(f"\n[5/6] Цвет: {len(combos)} комбинаций. СМОТРИ НА ФИГУРКУ!")
-        for i, (c, p) in enumerate(combos, 1):
-            if self.dead: return []
-            log(f"  [{i}] 0x{c:02X} {p.hex(' ')}")
-            await self.w(EXTCTRL, bytes([c]) + p)
-            await asyncio.sleep(self.a.delay)
-        return combos
-
-    async def hold(self, combos):
-        log("\n[HOLD] Кручу цвета по кругу. Ctrl-C для остановки.")
-        while not self.dead:
-            for i, (c, p) in enumerate(combos, 1):
-                if self.dead: return
-                log(f"  [{i}] 0x{c:02X} {p.hex(' ')}")
-                await self.w(EXTCTRL, bytes([c]) + p, timeout=2.0)
-                await asyncio.sleep(1.2)
-
-    def patch(self, img):
-        pairs = []
-        for x in self.a.pair:
-            s, d = x.split(":")
-            pairs.append((bytes.fromhex(s.replace(" ", "")), bytes.fromhex(d.replace(" ", ""))))
-        if not pairs:
-            pairs = [(b"\xff\x00\x00", b"\x00\xff\x00")]
-        buf, hits = bytearray(img), 0
-        for s, d in pairs:
-            if len(s) != len(d): continue
-            i = 0
-            while True:
-                i = buf.find(s, i)
-                if i < 0: break
-                buf[i:i + len(d)] = d
-                hits += 1
-                i += len(d)
-        log(f"  Замен байтов: {hits}")
-        return bytes(buf), hits
-
-    async def wait_st(self, t):
-        try:
-            return await asyncio.wait_for(self.st_q.get(), t)
-        except asyncio.TimeoutError:
-            return None
-
-    async def oad(self, path):
-        img = bytearray(open(path, "rb").read())
-        if not img or not self.hdr:
-            log("  Нет образа или заголовка.")
-            return False
-        if len(img) % 4:
-            img += b"\xff" * (4 - len(img) % 4)
-        own = parse_header(self.hdr)
-        uid = self.a.uid_int if self.a.uid_int is not None else own["uid"] ^ 0xFFFFFFFF
-        hdr = build_header(bytes(img), uid, tpl=self.hdr, len_value=self.a.len_value)
-        log(f"\n[6/6] OAD {len(img)} B, crc16 {crc16(bytes(img)):04X}, uid {own['uid']:08X} -> {uid:08X}")
-        log(f"  Заголовок: {hdr.hex(' ')}")
-        for i in (3, 2, 1):
-            log(f"  Старт через {i}...")
-            await asyncio.sleep(1)
-        if not await self.w(IDENTIFY, hdr, response=False, timeout=8.0):
-            log("  Заголовок не ушёл.")
-            return False
-        st = await self.wait_st(8.0)
-        log(f"  Статус: {ST.get(st, st)}")
-        if st not in (0, None): return False
-        bs, total, t0 = self.a.block_size, (len(img) + self.a.block_size - 1) // self.a.block_size, time.time()
-        log(f"  Блоков {total} по {bs} B...")
-        for i in range(total):
-            if self.dead: return False
-            if not await self.w(BLOCK, struct.pack("<H", i) + bytes(img[i * bs:(i + 1) * bs]),
-                                response=False, timeout=6.0):
-                log(f"  Обрыв на блоке {i}.")
-                return False
-            if i % 32 == 31 or i == total - 1:
-                log(f"    {i + 1}/{total} {100 * (i + 1) // total}% "
-                    f"{((i + 1) * bs) / max(time.time() - t0, 1e-3) / 1024:.1f} KiB/s")
-            st = await self.wait_st(0.01)
-            if st not in (None, 0):
-                log(f"  Статус блока {i}: {ST.get(st, st)}")
-                if st in (1, 2, 3): return False
-        st = await self.wait_st(20.0)
-        log(f"  Финал: {ST.get(st, st)}")
-        if st == 0:
-            log("  УСПЕХ! Не трогай фигурку 10 секунд.")
-            return True
-        return False
-
-    def report(self):
-        log("\n" + "=" * 46)
-        log(f"Нотификаций: {self.total}, подавлено: {self.supp}, заголовок: {'есть' if self.hdr else 'нет'}")
-        log("=" * 46)
-        with open(self.a.dump, "w") as f:
-            json.dump(self.dump, f, indent=1)
-        log(f"Лог сохранён: {self.a.dump}")
-
-async def find_device(a):
-    for n in range(5):  # Увеличили попытки до 5
-        try:
-            devs = await BleakScanner.discover(timeout=5.0)
-        except Exception as e:
-            log(f"  Ошибка сканирования: {type(e).__name__}: {e}")
-            devs = []
-        for d in devs:
-            # Ищем строго по имени
-            if not a.addr and d.name and a.name.lower() in d.name.lower():
-                return d
-        log(f"  Попытка {n + 1}/5 — не найдено. Нажми кнопку на груди Марио.")
-        await asyncio.sleep(1)
-    return None
-
-async def run(a):
-    if a.mode == "patch":
-        m = Mario(None, a)
-        out, hits = m.patch(open(a.file, "rb").read())
-        log(f"Замен: {hits}")
-        if hits and not a.dry_run:
-            open(a.out, "wb").write(out)
-            log(f"Записано {a.out}, crc16 {crc16(out):04X}")
-        return 0
-
-    log("  Ищу устройство (по имени)...")
-    dev = await find_device(a)
-    if not dev:
-        log("Марио не найден.")
-        return 2
-    log(f"  Найдено: {dev.name} ({dev.address})")
-    
-    log("  Подключаюсь (агрессивный режим)...")
-    cl = BleakClient(dev, timeout=10.0, pair=True)
-    try:
-        await cl.connect()
-        log("  ПОДКЛЮЧЕНО!")
-    except Exception as e:
-        log(f"  ОШИБКА ПОДКЛЮЧЕНИЯ: {type(e).__name__}: {e}")
-        log("  Убедись, что приложение LEGO закрыто, а Bluetooth на Mac включён.")
-        return 2
-
-    m = Mario(cl, a)
-    try:
-        await m.setup()
-        if a.mode == "auto":
-            await m.discover()
-            if m.dead: return 0
-            await m.probe()
-            await m.sweep()
-            ok = await m.header()
-            combos = await m.green()
-            do = ok and not a.no_oad and any("write" in (m.props.get(IDENTIFY) or []))
-            if do:
-                try:
-                    raw = open(a.fw, "rb").read()
-                except FileNotFoundError:
-                    log(f"\n  {a.fw} нет — прошивку пропускаю.")
-                    do = False
-                if do:
-                    p, hits = m.patch(raw)
-                    if hits and await m.oad(a.out if (open(a.out, "wb").write(p) or True) else a.out):
-                        return 0
-            if combos and not m.dead:
-                await m.hold(combos)
-        elif a.mode == "discover":
-            await m.discover()
-        elif a.mode == "probe":
-            await m.probe()
-        elif a.mode == "sweep":
-            await m.sweep()
-        elif a.mode == "header":
-            await m.header()
-        elif a.mode == "green":
-            c = await m.green()
-            if a.hold and c:
-                await m.hold(c)
-        elif a.mode == "oad":
-            if await m.header():
-                await m.oad(a.file)
-    finally:
-        m.report()
-        try:
-            await cl.disconnect()
-        except Exception:
-            pass
-    return 0
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("mode", nargs="?", default="auto",
-                   choices=["auto", "discover", "probe", "sweep", "header", "green", "patch", "oad"])
-    p.add_argument("file", nargs="?")
-    p.add_argument("--name", default="Mario")
-    p.add_argument("--addr", default=None)
-    p.add_argument("--timeout", type=float, default=5.0)
-    p.add_argument("--delay", type=float, default=0.35)
-    p.add_argument("--spam-cap", type=int, default=4)
-    p.add_argument("--stop-at", type=lambda x: int(x, 0), default=0x50)
-    p.add_argument("--dump", default="mario_auto.json")
-    p.add_argument("--yes", action="store_true")
-    p.add_argument("--hold", action="store_true")
-    p.add_argument("--fw", default="fw.bin")
-    p.add_argument("--out", default="green.bin")
-    p.add_argument("--pair", action="append", default=[])
-    p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--block-size", type=int, default=16)
-    p.add_argument("--len-value", type=lambda x: int(x, 0), default=None)
-    p.add_argument("--uid-int", type=lambda x: int(x, 0), default=None)
-    p.add_argument("--no-oad", action="store_true")
-    a = p.parse_args()
-    if a.mode in ("patch", "oad") and not a.file:
-        p.error("Нужен файл образа")
-    try:
-        sys.exit(asyncio.run(run(a)))
-    except KeyboardInterrupt:
-        log("\nПрервано пользователем.")
-
-if __name__ == "__main__":
-    main()
+m@iMac-M mario_hack % ./go.sh
+[00:40:54] bleak ?, Python 3.14.7
+[00:40:54] Сканирование 1/6 (6.0 с)...
+[00:41:00]   1) Mario 6MH7_a_b  80E285CE-18DD-42CA-9D72-7ECA8E604C72
+[00:41:00]   2) Mario 6MH7_a_b  4A50A340-EDAE-4E60-A5C0-8ABAE666AD4E
+[00:41:01] Подключено: 80E285CE-18DD-42CA-9D72-7ECA8E604C72
+[00:41:01] Подписка f000ffc4 не удалась: BleakCharacteristicNotFoundError: Characteristic f000ffc4-0451-4000-b000-000000000000 was not found!
+[00:41:01] 
+[GATT] Характеристики
+[00:41:01]   00001624-1212-efde-1623-785feabcd123 properties=['write', 'write-without-response', 'notify']
+[00:41:01]   f000ffc1-0451-4000-b000-000000000000 properties=['write', 'write-without-response', 'notify']
+[00:41:01]   f000ffc2-0451-4000-b000-000000000000 properties=['write', 'write-without-response', 'notify']
+[00:41:01]   f000ffc5-0451-4000-b000-000000000000 properties=['write-without-response', 'notify']
+[00:41:01] ffc4 отсутствует: статусы OAD могут быть недоступны
+[00:41:01] Доступно: цвет=да, OAD=да
+[00:41:01] 
+----------------------------------------
+[00:41:01]   1) GATT
+[00:41:01]   2) зонд
+[00:41:01]   3) перебор команд
+[00:41:01]   4) заголовок
+[00:41:01]   5) цвет
+[00:41:01]   6) бенч
+[00:41:01]   7) выход
+Выбор: 5
+[00:41:15] 
+[ЦВЕТ] 120 комбинаций
+[00:41:15]   [1] 0x10 00 ff 00
+[00:41:15]     [f000ffc5] 10 09 04 15 ff
+[00:41:15]   [2] 0x10 ff 00 00
+[00:41:15]     [f000ffc5] 10 09 04 15 ff
+[00:41:16]   [3] 0x10 00 00 ff 00
+[00:41:16]     [f000ffc5] 10 09 04 15 ff
+[00:41:16]   [4] 0x10 00 00 ff 00 ff
+[00:41:16]     [f000ffc5] 10 09 04 15 ff
+[00:41:16]   [5] 0x10 01 00 ff 00
+[00:41:17]   [6] 0x10 00 ff 00 00 ff
+[00:41:17]   [7] 0x10 00 00 ff
+[00:41:17]   [8] 0x10 ff 00 00 ff
+[00:41:18]   [9] 0x11 00 ff 00
+[00:41:18]     [f000ffc5] 11 00
+[00:41:18]   [10] 0x11 ff 00 00
+[00:41:18]     [f000ffc5] 11 00
+[00:41:18]   [11] 0x11 00 00 ff 00
+[00:41:19]     [f000ffc5] 11 00
+[00:41:19]   [12] 0x11 00 00 ff 00 ff
+[00:41:19]     [f000ffc5] 11 00
+[00:41:19]   [13] 0x11 01 00 ff 00
+[00:41:19]     [f000ffc5] 11 01 ff fe 07 00
+[00:41:20]   [14] 0x11 00 ff 00 00 ff
+[00:41:20]   [15] 0x11 00 00 ff
+[00:41:20]   [16] 0x11 ff 00 00 ff
+[00:41:21]   [17] 0x13 00 ff 00
+[00:41:21]     [f000ffc5] 13 00
+[00:41:21]   [18] 0x13 ff 00 00
+[00:41:21]     [f000ffc5] 13 00
+[00:41:21]   [19] 0x13 00 00 ff 00
+[00:41:21]     [f000ffc5] 13 00
+[00:41:22]   [20] 0x13 00 00 ff 00 ff
+[00:41:22]     [f000ffc5] 13 00
+[00:41:22]   [21] 0x13 01 00 ff 00
+[00:41:22]   [22] 0x13 00 ff 00 00 ff
+[00:41:23]   [23] 0x13 00 00 ff
+[00:41:23]   [24] 0x13 ff 00 00 ff
+[00:41:23]   [25] 0x09 00 ff 00
+[00:41:23]     [f000ffc5] 09 01
+[00:41:24]   [26] 0x09 ff 00 00
+[00:41:24]     [f000ffc5] 09 01
+[00:41:24]   [27] 0x09 00 00 ff 00
+[00:41:24]     [f000ffc5] 09 01
+[00:41:24]   [28] 0x09 00 00 ff 00 ff
+[00:41:25]     [f000ffc5] 09 01
+[00:41:25]   [29] 0x09 01 00 ff 00
+[00:41:25]   [30] 0x09 00 ff 00 00 ff
+[00:41:26]   [31] 0x09 00 00 ff
+[00:41:26]   [32] 0x09 ff 00 00 ff
+[00:41:26]   [33] 0x06 00 ff 00
+[00:41:26]     [f000ffc5] 06 00
+[00:41:27]   [34] 0x06 ff 00 00
+[00:41:27]     [f000ffc5] 06 00
+[00:41:27]   [35] 0x06 00 00 ff 00
+[00:41:27]     [f000ffc5] 06 00
+[00:41:27]   [36] 0x06 00 00 ff 00 ff
+[00:41:27]     [f000ffc5] 06 00
+[00:41:28]   [37] 0x06 01 00 ff 00
+[00:41:28]   [38] 0x06 00 ff 00 00 ff
+[00:41:28]   [39] 0x06 00 00 ff
+[00:41:29]   [40] 0x06 ff 00 00 ff
+[00:41:29]   [41] 0x08 00 ff 00
+[00:41:29]     [f000ffc5] 08 00
+[00:41:29]   [42] 0x08 ff 00 00
+[00:41:29]     [f000ffc5] 08 00
+[00:41:30]   [43] 0x08 00 00 ff 00
+[00:41:30]     [f000ffc5] 08 00
+[00:41:30]   [44] 0x08 00 00 ff 00 ff
+[00:41:30]     [f000ffc5] 08 00
+[00:41:30]   [45] 0x08 01 00 ff 00
+[00:41:31]   [46] 0x08 00 ff 00 00 ff
+[00:41:31]   [47] 0x08 00 00 ff
+[00:41:32]   [48] 0x08 ff 00 00 ff
+[00:41:32]   [49] 0x0A 00 ff 00
+[00:41:32]     [f000ffc5] ff
+[00:41:32]   [50] 0x0A ff 00 00
+[00:41:32]     [f000ffc5] ff
+[00:41:33]   [51] 0x0A 00 00 ff 00
+[00:41:33]     [f000ffc5] ff
+[00:41:33]   [52] 0x0A 00 00 ff 00 ff
+[00:41:33]     [f000ffc5] ff
+[00:41:33]   [53] 0x0A 01 00 ff 00
+[00:41:34]   [54] 0x0A 00 ff 00 00 ff
+[00:41:34]   [55] 0x0A 00 00 ff
+[00:41:34]   [56] 0x0A ff 00 00 ff
+[00:41:35]   [57] 0x0B 00 ff 00
+[00:41:35]   [58] 0x0B ff 00 00
+[00:41:36]   [59] 0x0B 00 00 ff 00
+[00:41:36]   [60] 0x0B 00 00 ff 00 ff
+[00:41:36]   [61] 0x0B 01 00 ff 00
+[00:41:37]   [62] 0x0B 00 ff 00 00 ff
+[00:41:37]   [63] 0x0B 00 00 ff
+[00:41:37]   [64] 0x0B ff 00 00 ff
+[00:41:38]   [65] 0x0C 00 ff 00
+[00:41:38]   [66] 0x0C ff 00 00
+[00:41:38]   [67] 0x0C 00 00 ff 00
+[00:41:39]   [68] 0x0C 00 00 ff 00 ff
+[00:41:39]   [69] 0x0C 01 00 ff 00
+[00:41:39]   [70] 0x0C 00 ff 00 00 ff
+[00:41:40]   [71] 0x0C 00 00 ff
+[00:41:40]   [72] 0x0C ff 00 00 ff
+[00:41:41]   [73] 0x0D 00 ff 00
